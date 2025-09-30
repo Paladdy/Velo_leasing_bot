@@ -1,0 +1,80 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: velo-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: velo_bot
+      POSTGRES_USER: velo_user
+      POSTGRES_PASSWORD: velo_password
+    ports:
+      - "5437:5432"  # Изменил с 5432 на 5437 (избегаем конфликта)
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - velo-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U velo_user -d velo_bot"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis for FSM states
+  redis:
+    image: redis:7-alpine
+    container_name: velo-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"  # Изменил с 6379 на 6380 (избегаем конфликта)
+    volumes:
+      - redis_data:/data
+    networks:
+      - velo-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  bot:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: velo-bot
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://velo_user:velo_password@postgres:5432/velo_bot
+      REDIS_URL: redis://redis:6379/0
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: 1
+    env_file:
+      - .env
+    ports:
+      - "8081:8080"
+    volumes:
+      - .:/app  # Read-write для разработки
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs  # Папка для логов
+    networks:
+      - velo-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  velo-network:
+    driver: bridge 
