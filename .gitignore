@@ -72,6 +72,7 @@ Thumbs.db
 
 # Project specific
 logs/
+!logs/.gitkeep
 *.log
 uploads/
 !uploads/.gitkeep
