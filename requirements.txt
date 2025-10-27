@@ -23,4 +23,7 @@ Pillow==10.2.0
 # Utilities
 loguru==0.7.2
 redis==5.0.1
-watchdog==3.0.0  # Для автоперезагрузки в режиме разработки 
+watchdog==3.0.0  # Для автоперезагрузки в режиме разработки
+
+# Internationalization
+aiogram-i18n==1.4 

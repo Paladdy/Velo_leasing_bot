@@ -1,0 +1,130 @@
+{
+  "language": {
+    "name": "O'zbek 🇺🇿",
+    "code": "uz"
+  },
+  
+  "common": {
+    "back": "◀️ Orqaga",
+    "cancel": "❌ Bekor qilish",
+    "confirm": "✅ Tasdiqlash",
+    "main_menu": "🏠 Asosiy menyu",
+    "loading": "⏳ Yuklanmoqda...",
+    "error": "❌ Xatolik yuz berdi",
+    "success": "✅ Muvaffaqiyatli"
+  },
+
+  "language_selection": {
+    "choose": "🌐 Выберите язык / Забонро интихоб кунед / Tilni tanlang",
+    "changed": "✅ Til o'zbek tiliga o'zgartirildi"
+  },
+
+  "start": {
+    "welcome_back": "👋 Xush kelibsiz, {name}!",
+    "admin_rights": "\n\n👨‍💼 Sizda administrator huquqlari bor",
+    "manager_rights": "\n\n👨‍💼 Sizda menejer huquqlari bor",
+    "welcome_new": "👋 Velosiped ijarasi tizimiga xush kelibsiz!\n\nIshni boshlash uchun ro'yxatdan o'tish kerak.\nIltimos, to'liq ismingizni kiriting:",
+    "user_not_found": "❌ Foydalanuvchi topilmadi"
+  },
+
+  "registration": {
+    "enter_name": "Iltimos, to'liq ismingizni kiriting:",
+    "name_error": "❌ Iltimos, to'g'ri ismni kiriting (kamida 2 ta belgi)",
+    "enter_phone": "📱 Ajoyib! Endi telefon raqamingizni ulashing:",
+    "phone_error": "📱 Iltimos, telefon raqamini ulashing yoki qo'lda kiriting",
+    "registration_complete": "✅ Ajoyib! Ro'yxatdan o'tish yakunlandi.\n\n📄 Velosiped ijarasi uchun hujjatlarni yuklash kerak:\n• Pasport YOKI Haydovchilik guvohnomasi (tanlang)\n• Tanlangan hujjat bilan selfi\n\nQaysi hujjatni yuklashni tanlang:",
+    "thank_you": "✅ Barcha hujjatlar yuklandi!\n\n📋 Hujjatlaringiz administratorga tekshiruv uchun yuborildi.\n⏰ Odatda tekshiruv 24 soatgacha davom etadi.\n📱 Hujjatlar tekshirilgandan so'ng sizga xabar beramiz.\n\nRo'yxatdan o'tganingiz uchun rahmat! 🚴‍♂️"
+  },
+
+  "documents": {
+    "choose_type": "Hujjat turini tanlang:",
+    "passport": "📄 Pasport",
+    "driver_license": "🚗 Haydovchilik guvohnomasi",
+    "selfie": "🤳 Hujjat bilan selfi",
+    "upload_passport": "📄 **Pasport yuklash**\n\nIltimos, pasportingizning aniq suratini yuboring.\nBarcha ma'lumotlar yaxshi ko'rinishini tekshiring.",
+    "upload_license": "🚗 **Haydovchilik guvohnomasi yuklash**\n\nIltimos, haydovchilik guvohnomangizning aniq suratini yuboring.\nBarcha ma'lumotlar yaxshi ko'rinishini tekshiring.",
+    "passport_received": "📄 Pasport qabul qilindi! Endi pasport bilan selfi yuboring:",
+    "license_received": "🚗 Haydovchilik guvohnomasi qabul qilindi! Endi guvohnoma bilan selfi yuboring:",
+    "selfie_received": "🤳 Selfi qabul qilindi!",
+    "photo_required": "📷 Iltimos, {doc_name} rasmini yuboring, matn emas.",
+    "save_error": "❌ Hujjatni saqlashda xatolik yuz berdi. Qaytadan urinib ko'ring."
+  },
+
+  "menu": {
+    "rent": "🚴‍♂️ Ijaraga olish",
+    "profile": "👤 Profil",
+    "repair": "🔧 Ta'mirlash",
+    "extend": "💳 Uzaytirish",
+    "admin_panel": "👨‍💼 Administrator paneli",
+    "manager_panel": "👨‍💼 Menejer paneli"
+  },
+
+  "rental": {
+    "title": "🚴‍♂️ **Velosiped ijarasi**",
+    "our_address": "📍 **Bizning manzil:**\n{address}",
+    "our_phone": "📞 **Telefon:**\n{phone}",
+    "working_hours": "🕐 **Ish vaqti:**\n{hours}",
+    "how_to_rent": "💡 **Qanday ijaraga olish:**\n1. Bizning manzilga keling\n2. Joyida velosipedni tanlang\n3. Administrator ijarani rasmiylashtirad\n4. To'lang va velosipedni oling",
+    "see_you": "Ko'rishguncha! 👋",
+    "show_on_map": "🗺️ Xaritada ko'rsatish",
+    "verification_required": "📄 Velosiped ijarasi uchun hujjatlarni tekshirishdan o'tish kerak.",
+    "status_pending": "⏳ Hujjatlaringiz tekshiruvda",
+    "status_rejected": "❌ Hujjatlaringiz rad etildi. Administratorga murojaat qiling",
+    "status_blocked": "🚫 Hisobingiz bloklangan. Administratorga murojaat qiling"
+  },
+
+  "profile": {
+    "title": "👤 **Mening profilim**",
+    "personal_data": "📝 **Shaxsiy ma'lumotlar:**",
+    "name": "• Ism: {name}",
+    "username": "• Username: @{username}",
+    "username_not_set": "• Username: ko'rsatilmagan",
+    "phone": "• Telefon: {phone}",
+    "phone_not_set": "• Telefon: ko'rsatilmagan",
+    "email": "• Email: {email}",
+    "email_not_set": "• Email: ko'rsatilmagan",
+    "role": "• Rol: {role}",
+    "language": "• Til: {language}",
+    "account_status": "📊 **Hisob holati:**",
+    "status_pending": "• ⏳ Tekshiruvda",
+    "status_verified": "• ✅ Tasdiqlangan",
+    "status_rejected": "• ❌ Rad etilgan",
+    "status_blocked": "• 🚫 Bloklangan",
+    "registration_date": "• Ro'yxatdan o'tish: {date}",
+    "verification_date": "• Tekshiruv: {date}",
+    "not_verified": "Tasdiqlanmagan",
+    "documents_title": "📄 **Hujjatlar:**",
+    "no_documents": "• Hujjatlar yuklanmagan",
+    "view_documents": "📄 Mening hujjatlarim",
+    "edit_profile": "✏️ Tahrirlash",
+    "change_language": "🌐 Tilni o'zgartirish",
+    "resubmit": "🔄 Qayta yuborish"
+  },
+
+  "admin": {
+    "panel_title": "👨‍💼 **Administrator paneli**",
+    "documents": "📋 Hujjatlar",
+    "bikes": "🚴‍♂️ Velosipedlar",
+    "tariffs": "💰 Tariflar",
+    "statistics": "📊 Statistika",
+    "users": "👥 Foydalanuvchilar",
+    "settings": "⚙️ Sozlamalar",
+    "no_permissions": "❌ Sizda administrator huquqlari yo'q",
+    "verification_title": "📋 **Hujjatlarni tekshirish**",
+    "stats_title": "📊 **Foydalanuvchilar statistikasi:**",
+    "unverified_count": "• ❌ Tekshirishdan o'tmagan: {count}",
+    "verified_count": "• ✅ Tekshirishdan o'tgan: {count}",
+    "approve_all": "✅ Barchasini tasdiqlash",
+    "reject_all": "❌ Barchasini rad etish",
+    "user_verified_notification": "🎉 **Tabriklaymiz!**\n\n✅ Barcha hujjatlaringiz tekshiruvdan o'tdi!\n🚴‍♂️ Endi velosipedlarni ijaraga olishingiz mumkin.\n\nAsosiy menyudagi \"🚴‍♂️ Ijaraga olish\" tugmasidan foydalaning."
+  },
+
+  "status": {
+    "unknown": "Noma'lum"
+  },
+
+  "buttons": {
+    "share_phone": "📱 Telefon raqamini ulashish"
+  }
+}
+

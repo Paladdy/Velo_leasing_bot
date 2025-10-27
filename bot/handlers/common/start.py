@@ -10,9 +10,11 @@ from pathlib import Path
 from database.base import async_session_factory
 from database.models.user import User, UserRole
 from database.models.document import Document, DocumentType, DocumentStatus
-from bot.keyboards.common import get_main_menu_keyboard, get_phone_request_keyboard, get_document_choice_keyboard
+from bot.keyboards.common import get_main_menu_keyboard, get_phone_request_keyboard, get_document_choice_keyboard, get_language_selection_keyboard
 from bot.states.registration import RegistrationStates
 from config.settings import settings
+from bot.utils.i18n import change_user_language, get_language_name
+from bot.utils.translations import get_text, get_user_language
 
 router = Router()
 
@@ -39,38 +41,68 @@ async def cmd_start(message: Message, state: FSMContext):
         if user:
             # Пользователь уже зарегистрирован
             await state.clear()
-            keyboard = get_main_menu_keyboard(is_staff=user.is_staff, role=user.role.value)
+            lang = get_user_language(user)
+            keyboard = get_main_menu_keyboard(is_staff=user.is_staff, role=user.role.value, language=lang)
             
-            welcome_text = f"👋 Добро пожаловать обратно, {user.full_name}!"
+            welcome_text = get_text("start.welcome_back", lang, name=user.full_name)
             if user.is_admin:
-                welcome_text += "\n\n👨‍💼 У вас есть права администратора"
+                welcome_text += get_text("start.admin_rights", lang)
             elif user.is_manager:
-                welcome_text += "\n\n👨‍💼 У вас есть права менеджера"
+                welcome_text += get_text("start.manager_rights", lang)
             
             await message.answer(welcome_text, reply_markup=keyboard)
         else:
-            # Новый пользователь - начинаем регистрацию
+            # Новый пользователь - начинаем регистрацию с выбора языка
             await message.answer(
-                "👋 Добро пожаловать в систему аренды велосипедов!\n\n"
-                "Для начала работы необходимо пройти регистрацию.\n"
-                "Пожалуйста, введите ваше полное имя:",
-                reply_markup=None
+                get_text("language_selection.choose", "ru"),
+                reply_markup=get_language_selection_keyboard()
             )
-            await state.set_state(RegistrationStates.waiting_for_name)
+            # Сохраняем telegram_id для последующего использования
+            await state.update_data(telegram_id=telegram_id, username=username)
+            await state.set_state(RegistrationStates.choosing_language)
+
+
+@router.callback_query(F.data.startswith("lang_"))
+async def process_language_selection(callback: CallbackQuery, state: FSMContext):
+    """Обработка выбора языка"""
+    language = callback.data.split("_")[1]  # lang_ru -> ru
+    
+    # Сохраняем выбранный язык в состояние
+    await state.update_data(language=language)
+    
+    # Получаем название языка и приветственное сообщение на выбранном языке
+    lang_name = get_language_name(language)
+    language_selected = get_text("language_selection.changed", language).replace(
+        get_language_name("ru") if language == "ru" else 
+        get_language_name("tg") if language == "tg" else 
+        get_language_name("uz"),
+        lang_name
+    )
+    
+    welcome_msg = f"{language_selected}\n\n{get_text('start.welcome_new', language)}"
+    
+    await callback.message.edit_text(
+        welcome_msg,
+        reply_markup=None
+    )
+    await state.set_state(RegistrationStates.waiting_for_name)
 
 
 @router.message(RegistrationStates.waiting_for_name)
 async def process_name(message: Message, state: FSMContext):
     """Обработка ввода имени"""
+    data = await state.get_data()
+    lang = data.get('language', 'ru')
+    
     if not message.text or len(message.text.strip()) < 2:
-        await message.answer("❌ Пожалуйста, введите корректное имя (минимум 2 символа)")
+        await message.answer(get_text("registration.name_error", lang))
         return
     
     await state.update_data(full_name=message.text.strip())
     
     await message.answer(
-        "📱 Отлично! Теперь поделитесь своим номером телефона:",
-        reply_markup=get_phone_request_keyboard()
+        get_text("registration.enter_phone", lang),
+        reply_markup=get_phone_request_keyboard(lang)
     )
     await state.set_state(RegistrationStates.waiting_for_phone)
 
@@ -85,8 +117,11 @@ async def process_phone_contact(message: Message, state: FSMContext):
 @router.message(RegistrationStates.waiting_for_phone)
 async def process_phone_text(message: Message, state: FSMContext):
     """Обработка ввода номера телефона текстом"""
+    data = await state.get_data()
+    lang = data.get('language', 'ru')
+    
     if not message.text:
-        await message.answer("📱 Пожалуйста, поделитесь номером телефона или введите его вручную")
+        await message.answer(get_text("registration.phone_error", lang))
         return
     
     phone = message.text.strip()
@@ -102,24 +137,24 @@ async def process_phone_number(message: Message, state: FSMContext, phone: str):
     username = message.from_user.username
     data = await state.get_data()
     
+    # Получаем выбранный язык (по умолчанию русский)
+    language = data.get('language', 'ru')
+    
     async with async_session_factory() as session:
         user = User(
             telegram_id=telegram_id,
             username=username,
             full_name=data['full_name'],
             phone=phone,
-            role=UserRole.CLIENT
+            role=UserRole.CLIENT,
+            language=language
         )
         session.add(user)
         await session.commit()
     
     await message.answer(
-        "✅ Отлично! Регистрация завершена.\n\n"
-        "📄 Для аренды велосипеда необходимо загрузить документы:\n"
-        "• Паспорт ИЛИ Водительские права (на выбор)\n"
-        "• Селфи с выбранным документом\n\n"
-        "Выберите, какой документ вы хотите загрузить:",
-        reply_markup=get_document_choice_keyboard()
+        get_text("registration.registration_complete", language),
+        reply_markup=get_document_choice_keyboard(language)
     )
     await state.set_state(RegistrationStates.choosing_document_type)
 
@@ -127,11 +162,12 @@ async def process_phone_number(message: Message, state: FSMContext, phone: str):
 @router.callback_query(F.data == "doc_choice_passport")
 async def choose_passport(callback: CallbackQuery, state: FSMContext):
     """Выбор паспорта для загрузки"""
-    await state.update_data(chosen_document_type="passport")  # Сохраняем строку вместо enum
+    data = await state.get_data()
+    lang = data.get('language', 'ru')
+    
+    await state.update_data(chosen_document_type="passport")
     await callback.message.edit_text(
-        "📄 **Загрузка паспорта**\n\n"
-        "Пожалуйста, отправьте четкое фото вашего паспорта.\n"
-        "Убедитесь, что все данные хорошо видны.",
+        get_text("documents.upload_passport", lang),
         reply_markup=None
     )
     await state.set_state(RegistrationStates.waiting_for_main_document)
@@ -140,11 +176,12 @@ async def choose_passport(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "doc_choice_license")
 async def choose_license(callback: CallbackQuery, state: FSMContext):
     """Выбор водительских прав для загрузки"""
-    await state.update_data(chosen_document_type="driver_license")  # Сохраняем строку вместо enum
+    data = await state.get_data()
+    lang = data.get('language', 'ru')
+    
+    await state.update_data(chosen_document_type="driver_license")
     await callback.message.edit_text(
-        "🚗 **Загрузка водительских прав**\n\n"
-        "Пожалуйста, отправьте четкое фото ваших водительских прав.\n"
-        "Убедитесь, что все данные хорошо видны.",
+        get_text("documents.upload_license", lang),
         reply_markup=None
     )
     await state.set_state(RegistrationStates.waiting_for_main_document)
@@ -154,15 +191,16 @@ async def choose_license(callback: CallbackQuery, state: FSMContext):
 async def process_main_document_photo(message: Message, state: FSMContext):
     """Обработка фото основного документа (паспорт или права)"""
     data = await state.get_data()
+    lang = data.get('language', 'ru')
     doc_type_str = data.get('chosen_document_type', 'passport')
     
     # Преобразуем строку в enum
     doc_type = DocumentType.PASSPORT if doc_type_str == 'passport' else DocumentType.DRIVER_LICENSE
     
     if doc_type == DocumentType.PASSPORT:
-        response_text = "📄 Паспорт получен! Теперь отправьте селфи с паспортом:"
+        response_text = get_text("documents.passport_received", lang)
     else:
-        response_text = "🚗 Водительские права получены! Теперь отправьте селфи с правами:"
+        response_text = get_text("documents.license_received", lang)
     
     await save_document_photo(message, state, doc_type, response_text)
     await state.set_state(RegistrationStates.waiting_for_selfie)
@@ -171,16 +209,15 @@ async def process_main_document_photo(message: Message, state: FSMContext):
 @router.message(RegistrationStates.waiting_for_selfie, F.photo)
 async def process_selfie_photo(message: Message, state: FSMContext):
     """Обработка селфи с документом"""
+    data = await state.get_data()
+    lang = data.get('language', 'ru')
+    
     await save_document_photo(message, state, DocumentType.SELFIE,
-                             "🤳 Селфи получено!")
+                             get_text("documents.selfie_received", lang))
     
     await message.answer(
-        "✅ Все документы загружены!\n\n"
-        "📋 Ваши документы отправлены на проверку администратору.\n"
-        "⏰ Обычно проверка занимает до 24 часов.\n"
-        "📱 Мы уведомим вас, как только документы будут проверены.\n\n"
-        "Спасибо за регистрацию! 🚴‍♂️",
-        reply_markup=get_main_menu_keyboard(is_staff=False)
+        get_text("registration.thank_you", lang),
+        reply_markup=get_main_menu_keyboard(is_staff=False, language=lang)
     )
     await state.set_state(RegistrationStates.registration_complete)
 
@@ -230,11 +267,14 @@ async def save_document_photo(message: Message, state: FSMContext, doc_type: Doc
         await message.answer(response_text)
         
     except Exception as e:
-        await message.answer("❌ Произошла ошибка при сохранении документа. Попробуйте еще раз.")
+        # Пытаемся получить язык из состояния
+        data = await state.get_data()
+        lang = data.get('language', 'ru')
+        await message.answer(get_text("documents.save_error", lang))
         print(f"Error saving document: {e}")
 
 
-@router.message(F.text == "◀️ Главное меню")
+@router.message(F.text.in_(["◀️ Главное меню", "◀️ Бозгашт", "◀️ Orqaga"]))
 async def back_to_main_menu(message: Message, state: FSMContext):
     """Возврат в главное меню"""
     telegram_id = message.from_user.id
@@ -247,24 +287,33 @@ async def back_to_main_menu(message: Message, state: FSMContext):
         
         if user:
             await state.clear()
-            keyboard = get_main_menu_keyboard(is_staff=user.is_staff, role=user.role.value)
-            await message.answer("🏠 Главное меню", reply_markup=keyboard)
+            lang = get_user_language(user)
+            keyboard = get_main_menu_keyboard(is_staff=user.is_staff, role=user.role.value, language=lang)
+            await message.answer(get_text("common.main_menu", lang), reply_markup=keyboard)
 
 
 @router.message(RegistrationStates.waiting_for_main_document)
 @router.message(RegistrationStates.waiting_for_selfie)
 async def handle_non_photo_in_document_states(message: Message, state: FSMContext):
     """Обработка не-фото сообщений в состояниях загрузки документов"""
+    data = await state.get_data()
+    lang = data.get('language', 'ru')
     current_state = await state.get_state()
     
-    if current_state == RegistrationStates.waiting_for_main_document:
-        data = await state.get_data()
-        doc_type_str = data.get('chosen_document_type', 'passport')
-        doc_name = "паспорта" if doc_type_str == 'passport' else "водительских прав"
-    else:
-        doc_name = "селфи с документом"
+    doc_names = {
+        "ru": {"passport": "паспорта", "license": "водительских прав", "selfie": "селфи с документом"},
+        "tg": {"passport": "шиносномаи гражданӣ", "license": "иҷозатномаи ронандагӣ", "selfie": "селфӣ бо ҳуҷҷат"},
+        "uz": {"passport": "pasport", "license": "haydovchilik guvohnomasi", "selfie": "hujjat bilan selfi"}
+    }
     
-    await message.answer(f"📷 Пожалуйста, отправьте фото {doc_name}, а не текст.")
+    if current_state == RegistrationStates.waiting_for_main_document:
+        doc_type_str = data.get('chosen_document_type', 'passport')
+        doc_key = "passport" if doc_type_str == 'passport' else "license"
+    else:
+        doc_key = "selfie"
+    
+    doc_name = doc_names.get(lang, doc_names["ru"]).get(doc_key, "")
+    await message.answer(get_text("documents.photo_required", lang, doc_name=doc_name))
 
 
 @router.message(Command("admin"))
@@ -282,13 +331,15 @@ async def cmd_admin(message: Message, state: FSMContext):
         user = result.scalar_one_or_none()
         
         if not user:
-            await message.answer("❌ Пользователь не найден")
+            lang = "ru"
+            await message.answer(get_text("start.user_not_found", lang))
             return
             
+        lang = get_user_language(user)
         print(f"🔍 User found: {user.full_name}, role: {user.role.value}, is_admin: {user.is_admin}")
         
         if not user.is_admin:
-            await message.answer("❌ У вас нет прав администратора")
+            await message.answer(get_text("admin.no_permissions", lang))
             return
         
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton

@@ -10,6 +10,7 @@ from database.models.bike import Bike, BikeStatus
 from bot.keyboards.client import get_rental_type_keyboard, get_bikes_keyboard, get_duration_keyboard, get_rental_confirmation_keyboard
 from bot.states.rental import RentalStates
 from services.settings_service import SettingsService
+from bot.utils.translations import get_text, get_user_language
 
 router = Router()
 
@@ -52,7 +53,7 @@ router = Router()
 #     await state.set_state(RentalStates.choosing_rental_type)
 
 # НОВЫЙ КОД - ТОЛЬКО ОЧНАЯ АРЕНДА
-@router.message(F.text == "🚴‍♂️ Арендовать")
+@router.message(F.text.in_(["🚴‍♂️ Арендовать", "🚴‍♂️ Иҷора кардан", "🚴‍♂️ Ijaraga olish"]))
 async def show_rental_contacts(message: Message, state: FSMContext):
     """Показать контакты для очной аренды велосипеда"""
     telegram_id = message.from_user.id
@@ -65,18 +66,22 @@ async def show_rental_contacts(message: Message, state: FSMContext):
         user = result.scalar_one_or_none()
         
         if not user:
-            await message.answer("❌ Пользователь не найден. Пожалуйста, пройдите регистрацию командой /start")
+            lang = "ru"
+            await message.answer(get_text("start.user_not_found", lang))
             return
+        
+        lang = get_user_language(user)
             
         if user.status != UserStatus.VERIFIED:
-            status_text = {
-                UserStatus.PENDING: "⏳ Ваши документы находятся на проверке",
-                UserStatus.REJECTED: "❌ Ваши документы были отклонены. Обратитесь к администратору",
-                UserStatus.BLOCKED: "🚫 Ваш аккаунт заблокирован. Обратитесь к администратору"
+            status_key = {
+                UserStatus.PENDING: "rental.status_pending",
+                UserStatus.REJECTED: "rental.status_rejected",
+                UserStatus.BLOCKED: "rental.status_blocked"
             }
+            status_msg = get_text(status_key.get(user.status, "status.unknown"), lang)
             await message.answer(
-                f"{status_text.get(user.status, 'Неизвестный статус')}\n\n"
-                "📄 Для аренды велосипеда необходимо пройти верификацию документов."
+                f"{status_msg}\n\n"
+                f"{get_text('rental.verification_required', lang)}"
             )
             return
     
@@ -85,19 +90,12 @@ async def show_rental_contacts(message: Message, state: FSMContext):
     
     # Показываем контакты для очной аренды
     contact_text = (
-        f"🚴‍♂️ **Аренда велосипеда**\n\n"
-        f"📍 **Наш адрес:**\n"
-        f"{settings.address}\n\n"
-        f"📞 **Телефон:**\n"
-        f"{settings.phone}\n\n"
-        f"🕐 **Время работы:**\n"
-        f"{settings.formatted_working_hours}\n\n"
-        f"💡 **Как арендовать:**\n"
-        f"1. Приезжайте к нам по адресу\n"
-        f"2. Выберите велосипед на месте\n"
-        f"3. Администратор оформит аренду\n"
-        f"4. Оплатите и получите велосипед\n\n"
-        f"До встречи! 👋"
+        f"{get_text('rental.title', lang)}\n\n"
+        f"{get_text('rental.our_address', lang, address=settings.address)}\n\n"
+        f"{get_text('rental.our_phone', lang, phone=settings.phone)}\n\n"
+        f"{get_text('rental.working_hours', lang, hours=settings.formatted_working_hours)}\n\n"
+        f"{get_text('rental.how_to_rent', lang)}\n\n"
+        f"{get_text('rental.see_you', lang)}"
     )
     
     # Клавиатура с дополнительными действиями
@@ -109,7 +107,7 @@ async def show_rental_contacts(message: Message, state: FSMContext):
     map_url = "https://yandex.ru/maps/?text=улица+Рабочая+2а+Химки&ll=37.4297%2C55.8970&z=16"
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🗺️ Показать на карте", url=map_url)]
+        [InlineKeyboardButton(text=get_text("rental.show_on_map", lang), url=map_url)]
         # [InlineKeyboardButton(text="📋 Мои аренды", callback_data="my_rentals")]  # Закомментировано - не нужно при очной аренде
     ])
     

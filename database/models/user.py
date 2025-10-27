@@ -28,6 +28,9 @@ class User(Base):
     phone = Column(String(20), nullable=True)
     email = Column(String(255), nullable=True)
     
+    # Язык интерфейса (ru, tg, uz)
+    language = Column(String(5), default="ru", nullable=False)
+    
     # Роли и статусы
     role = Column(Enum(UserRole), default=UserRole.CLIENT, nullable=False)
     status = Column(Enum(UserStatus), default=UserStatus.PENDING, nullable=False)
