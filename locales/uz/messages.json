@@ -84,7 +84,7 @@
     "email": "• Email: {email}",
     "email_not_set": "• Email: ko'rsatilmagan",
     "role": "• Rol: {role}",
-    "language": "• Til: {language}",
+    "language": "• Til: {lang_name}",
     "account_status": "📊 **Hisob holati:**",
     "status_pending": "• ⏳ Tekshiruvda",
     "status_verified": "• ✅ Tasdiqlangan",
@@ -127,4 +127,5 @@
     "share_phone": "📱 Telefon raqamini ulashish"
   }
 }
+
 

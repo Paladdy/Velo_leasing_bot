@@ -58,7 +58,7 @@ async def show_profile(message: Message, state: FSMContext):
             phone_text,
             email_text,
             get_text("profile.role", lang, role=user.role.value),
-            get_text("profile.language", lang, language=get_language_name(user.language)),
+            get_text("profile.language", lang, lang_name=get_language_name(user.language)),
             "",
             get_text("profile.account_status", lang),
             get_text(status_key.get(user.status, "status.unknown"), lang),

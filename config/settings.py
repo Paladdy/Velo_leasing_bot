@@ -34,7 +34,9 @@ class Settings(BaseSettings):
         return [int(id.strip()) for id in self.admin_ids_str.split(",") if id.strip()]
     
     class Config:
-        env_file = [".env", "config/test.env"]
+        # Порядок важен: сначала проверяется .env.local (для разработки), 
+        # затем .env (продакшн на сервере), затем test.env
+        env_file = [".env.local", ".env", "config/test.env"]
         env_file_encoding = "utf-8"
         extra = "ignore"  # Игнорируем дополнительные поля
 

@@ -180,3 +180,4 @@ def get_user_language(user) -> str:
         return user.language or "ru"
     return "ru"
 
+
