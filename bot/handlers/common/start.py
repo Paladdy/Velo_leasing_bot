@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 
 from database.base import async_session_factory
-from database.models.user import User, UserRole
+from database.models.user import User, UserRole, UserStatus
 from database.models.document import Document, DocumentType, DocumentStatus
 from bot.keyboards.common import get_main_menu_keyboard, get_phone_request_keyboard, get_document_choice_keyboard, get_language_selection_keyboard
 from bot.states.registration import RegistrationStates
@@ -42,6 +42,14 @@ async def cmd_start(message: Message, state: FSMContext):
             # Пользователь уже зарегистрирован
             await state.clear()
             lang = get_user_language(user)
+            
+            # Автоматически назначаем роль админа, если telegram_id в ADMIN_IDS
+            if telegram_id in settings.admin_ids and user.role != UserRole.ADMIN:
+                user.role = UserRole.ADMIN
+                user.status = UserStatus.VERIFIED
+                await session.commit()
+                print(f"✅ Автоматически назначен администратором: {user.full_name} (ID: {telegram_id})")
+            
             keyboard = get_main_menu_keyboard(is_staff=user.is_staff, role=user.role.value, language=lang)
             
             welcome_text = get_text("start.welcome_back", lang, name=user.full_name)
@@ -140,17 +148,25 @@ async def process_phone_number(message: Message, state: FSMContext, phone: str):
     # Получаем выбранный язык (по умолчанию русский)
     language = data.get('language', 'ru')
     
+    # Определяем роль и статус на основе ADMIN_IDS
+    role = UserRole.ADMIN if telegram_id in settings.admin_ids else UserRole.CLIENT
+    status = UserStatus.VERIFIED if telegram_id in settings.admin_ids else UserStatus.PENDING
+    
     async with async_session_factory() as session:
         user = User(
             telegram_id=telegram_id,
             username=username,
             full_name=data['full_name'],
             phone=phone,
-            role=UserRole.CLIENT,
+            role=role,
+            status=status,
             language=language
         )
         session.add(user)
         await session.commit()
+        
+        if role == UserRole.ADMIN:
+            print(f"✅ Новый администратор зарегистрирован: {user.full_name} (ID: {telegram_id})")
     
     await message.answer(
         get_text("registration.registration_complete", language),

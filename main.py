@@ -16,7 +16,6 @@ from bot.handlers.admin.admin_panel import router as admin_panel_router
 from bot.handlers.admin.bike_management import router as bike_management_router
 from bot.handlers.admin.document_verification import router as document_verification_router
 from bot.handlers.admin.settings_management import router as settings_management_router
-from bot.utils.i18n import setup_i18n
 
 
 async def main():
@@ -50,10 +49,8 @@ async def main():
     
     dp = Dispatcher(storage=storage)
     
-    # Настройка мультиязычности (i18n)
-    i18n_middleware = setup_i18n()
-    i18n_middleware.setup(dispatcher=dp)
-    logger.info("✅ Мультиязычность (i18n) настроена")
+    # Мультиязычность настроена через bot/utils/translations.py (простые JSON переводы)
+    logger.info("✅ Мультиязычность (i18n) готова к использованию")
     
     # Регистрация роутеров в правильном порядке
     # 1. Команды (высший приоритет)

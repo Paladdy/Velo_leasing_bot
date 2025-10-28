@@ -1,78 +1,21 @@
 """
 Утилиты для работы с мультиязычностью (i18n)
+Упрощенная версия без FluentRuntimeCore
 """
-from pathlib import Path
-from aiogram_i18n import I18nMiddleware
-from aiogram_i18n.cores import FluentRuntimeCore
 from sqlalchemy import select
 
 from database.base import async_session_factory
 from database.models.user import User
 
 
-# Путь к папке с локализациями
-LOCALES_DIR = Path(__file__).parent.parent.parent / "locales"
-
-
-def setup_i18n() -> I18nMiddleware:
+def setup_i18n():
     """
-    Настройка i18n middleware
-    
-    Returns:
-        I18nMiddleware: Настроенный middleware для мультиязычности
+    Заглушка для совместимости
+    В этом проекте мы используем простую систему переводов через JSON
+    См. bot/utils/translations.py
     """
-    i18n_middleware = I18nMiddleware(
-        core=FluentRuntimeCore(
-            path=LOCALES_DIR,
-            raise_key_error=False,  # Не выбрасывать ошибку, если ключ не найден
-            locales_map={
-                "ru": "ru",  # Русский
-                "tg": "tg",  # Таджикский  
-                "uz": "uz",  # Узбекский
-            }
-        ),
-        default_locale="ru",
-        manager=UserLanguageManager()
-    )
-    
-    return i18n_middleware
-
-
-class UserLanguageManager:
-    """
-    Менеджер для получения языка пользователя из базы данных
-    """
-    
-    async def get_locale(self, event_from_user=None, data: dict = None) -> str:
-        """
-        Получить язык пользователя
-        
-        Args:
-            event_from_user: Объект пользователя от Telegram
-            data: Дополнительные данные
-            
-        Returns:
-            str: Код языка (ru, tg, uz)
-        """
-        if not event_from_user:
-            return "ru"
-        
-        telegram_id = event_from_user.id
-        
-        try:
-            async with async_session_factory() as session:
-                result = await session.execute(
-                    select(User.language).where(User.telegram_id == telegram_id)
-                )
-                language = result.scalar_one_or_none()
-                
-                if language:
-                    return language
-        except Exception as e:
-            print(f"Error getting user language: {e}")
-        
-        # По умолчанию русский
-        return "ru"
+    # Middleware не нужен, так как мы используем прямые вызовы get_text()
+    return None
 
 
 async def change_user_language(telegram_id: int, new_language: str) -> bool:
