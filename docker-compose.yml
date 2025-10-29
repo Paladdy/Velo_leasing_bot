@@ -55,7 +55,7 @@ services:
       PYTHONPATH: /app
       PYTHONUNBUFFERED: 1
     env_file:
-      - config/test.env
+      - .env
     ports:
       - "8081:8080"
     volumes:

@@ -53,22 +53,20 @@ async def main():
     logger.info("✅ Мультиязычность (i18n) готова к использованию")
     
     # Регистрация роутеров в правильном порядке
-    # 1. Профиль (для обработки смены языка зарегистрированных пользователей)
-    dp.include_router(profile_router)
-    
-    # 2. Команды (для регистрации новых пользователей)
+    # 1. Команды (высший приоритет - обработка /start и регистрация)
     dp.include_router(start_router)
     
-    # 3. Административные функции (специфичные обработчики)
+    # 2. Административные функции (специфичные обработчики)
     dp.include_router(admin_panel_router)
     dp.include_router(bike_management_router)
     dp.include_router(document_verification_router)
     
-    # 4. Клиентские функции
+    # 3. Клиентские функции
     dp.include_router(rental_router)
+    dp.include_router(profile_router)
     dp.include_router(repair_router)
     
-    # 5. Настройки (могут содержать универсальные обработчики)
+    # 4. Настройки (могут содержать универсальные обработчики)
     dp.include_router(settings_management_router)
     
     logger.info("✅ Все роутеры зарегистрированы")

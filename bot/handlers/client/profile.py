@@ -281,30 +281,17 @@ async def change_language(callback: CallbackQuery, state: FSMContext):
         
         await callback.message.edit_text(
             messages.get(user.language, messages["ru"]),
-            reply_markup=get_language_selection_keyboard()
+            reply_markup=get_language_selection_keyboard(for_registration=False)
         )
 
 
-@router.callback_query(F.data.startswith("lang_"))
+@router.callback_query(F.data.startswith("change_lang_"))
 async def process_language_change(callback: CallbackQuery, state: FSMContext):
     """Обработка изменения языка для ЗАРЕГИСТРИРОВАННЫХ пользователей"""
-    language = callback.data.split("_")[1]  # lang_ru -> ru
+    language = callback.data.split("_")[2]  # change_lang_ru -> ru
     telegram_id = callback.from_user.id
     
-    # ВАЖНО: Проверяем, что пользователь ЗАРЕГИСТРИРОВАН
-    async with async_session_factory() as session:
-        result = await session.execute(
-            select(User).where(User.telegram_id == telegram_id)
-        )
-        user = result.scalar_one_or_none()
-        
-        if not user:
-            # Пользователь НЕ зарегистрирован - это регистрация
-            # Пропускаем, пусть обработает start.py
-            print(f"ℹ️ Пользователь {telegram_id} не найден в profile handler, пропускаем")
-            return
-    
-    # ВАЖНО: Очищаем состояние сразу, чтобы не было конфликта с регистрацией
+    # Очищаем состояние
     await state.clear()
     
     # Изменяем язык в базе данных

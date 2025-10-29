@@ -63,38 +63,17 @@ async def cmd_start(message: Message, state: FSMContext):
             # Новый пользователь - начинаем регистрацию с выбора языка
             await message.answer(
                 get_text("language_selection.choose", "ru"),
-                reply_markup=get_language_selection_keyboard()
+                reply_markup=get_language_selection_keyboard(for_registration=True)
             )
             # Сохраняем telegram_id для последующего использования
             await state.update_data(telegram_id=telegram_id, username=username)
             await state.set_state(RegistrationStates.choosing_language)
 
 
-@router.callback_query(F.data.startswith("lang_"))
+@router.callback_query(F.data.startswith("register_lang_"))
 async def process_language_selection(callback: CallbackQuery, state: FSMContext):
     """Обработка выбора языка ПРИ РЕГИСТРАЦИИ"""
-    telegram_id = callback.from_user.id
-    language = callback.data.split("_")[1]  # lang_ru -> ru
-    
-    # ВАЖНО: Проверяем, что это НОВЫЙ пользователь (не зарегистрирован)
-    async with async_session_factory() as session:
-        result = await session.execute(
-            select(User).where(User.telegram_id == telegram_id)
-        )
-        existing_user = result.scalar_one_or_none()
-        
-        if existing_user:
-            # Пользователь УЖЕ зарегистрирован - пропускаем этот обработчик
-            # Его обработает обработчик из profile.py для смены языка
-            print(f"ℹ️ Пользователь {telegram_id} уже зарегистрирован, пропускаем обработчик регистрации")
-            return
-    
-    # Проверяем текущее состояние
-    current_state = await state.get_state()
-    if current_state != RegistrationStates.choosing_language:
-        # Это не регистрация, пропускаем
-        print(f"ℹ️ Неправильное состояние {current_state}, пропускаем")
-        return
+    language = callback.data.split("_")[2]  # register_lang_ru -> ru
     
     # Сохраняем выбранный язык в состояние
     await state.update_data(language=language)

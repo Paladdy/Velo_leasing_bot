@@ -2,13 +2,20 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 from bot.utils.translations import get_text
 
 
-def get_language_selection_keyboard() -> InlineKeyboardMarkup:
-    """Клавиатура для выбора языка"""
+def get_language_selection_keyboard(for_registration: bool = True) -> InlineKeyboardMarkup:
+    """
+    Клавиатура для выбора языка
+    
+    Args:
+        for_registration: True - для регистрации, False - для смены языка
+    """
+    prefix = "register_lang_" if for_registration else "change_lang_"
+    
     keyboard = [
-        [InlineKeyboardButton(text="Русский 🇷🇺", callback_data="lang_ru")],
-        [InlineKeyboardButton(text="Тоҷикӣ 🇹🇯", callback_data="lang_tg")],
-        [InlineKeyboardButton(text="O'zbek 🇺🇿", callback_data="lang_uz")],
-        [InlineKeyboardButton(text="Кыргызча 🇰🇬", callback_data="lang_ky")]
+        [InlineKeyboardButton(text="Русский 🇷🇺", callback_data=f"{prefix}ru")],
+        [InlineKeyboardButton(text="Тоҷикӣ 🇹🇯", callback_data=f"{prefix}tg")],
+        [InlineKeyboardButton(text="O'zbek 🇺🇿", callback_data=f"{prefix}uz")],
+        [InlineKeyboardButton(text="Кыргызча 🇰🇬", callback_data=f"{prefix}ky")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
