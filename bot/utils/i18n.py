@@ -29,7 +29,10 @@ async def change_user_language(telegram_id: int, new_language: str) -> bool:
     Returns:
         bool: True если успешно изменен, False если ошибка
     """
+    print(f"🔄 change_user_language: telegram_id={telegram_id}, new_language={new_language}")
+    
     if new_language not in ["ru", "tg", "uz", "ky"]:
+        print(f"❌ Неподдерживаемый язык: {new_language}")
         return False
     
     try:
@@ -40,11 +43,18 @@ async def change_user_language(telegram_id: int, new_language: str) -> bool:
             user = result.scalar_one_or_none()
             
             if user:
+                old_lang = user.language
                 user.language = new_language
                 await session.commit()
+                print(f"✅ Язык изменен: {old_lang} → {new_language} для пользователя {telegram_id}")
                 return True
+            else:
+                print(f"❌ Пользователь {telegram_id} не найден")
+                return False
     except Exception as e:
-        print(f"Error changing user language: {e}")
+        print(f"❌ Error changing user language: {e}")
+        import traceback
+        traceback.print_exc()
     
     return False
 
