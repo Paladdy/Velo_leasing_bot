@@ -1,5 +1,5 @@
 from aiogram import Router, F
-from aiogram.types import Message, PhotoSize, CallbackQuery, URLInputFile, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, PhotoSize, CallbackQuery
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -60,73 +60,14 @@ async def cmd_start(message: Message, state: FSMContext):
             
             await message.answer(welcome_text, reply_markup=keyboard)
         else:
-            # Новый пользователь - показываем красивое приветствие с фото
-            # Используем изображение велосипеда
-            photo_url = "https://images.unsplash.com/photo-1571068316344-75bc76f77890?w=800&q=80"
-            
-            welcome_text = (
-                f"🚴 <b>Сервис аренды нового поколения.</b>\n\n"
-                f"Мы автоматизировали всю рутину,\n"
-                f"чтобы вы экономили время:\n\n"
-                f"🤝 Умная и быстрая регистрация.\n"
-                f"📝 Автоматическое создание договора аренды.\n"
-                f"💳 Онлайн-оплата и гибкие тарифы (аренда/выкуп).\n"
-                f"👤 Удобный личный кабинет для управления арендой.\n\n"
-                f"Работаем 24/7."
-            )
-            
-            # Создаем inline-кнопку для начала регистрации
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🚀 Начать", callback_data="start_registration")]
-            ])
-            
-            try:
-                photo = URLInputFile(photo_url)
-                await message.answer_photo(
-                    photo=photo,
-                    caption=welcome_text,
-                    reply_markup=keyboard,
-                    parse_mode="HTML"
-                )
-            except Exception as e:
-                # Если не удалось загрузить фото, отправляем просто текст
-                print(f"Ошибка загрузки фото: {e}")
-                await message.answer(
-                    welcome_text,
-                    reply_markup=keyboard,
-                    parse_mode="HTML"
-                )
-
-
-@router.callback_query(F.data == "start_registration")
-async def start_registration(callback: CallbackQuery, state: FSMContext):
-    """Начало регистрации - выбор языка"""
-    telegram_id = callback.from_user.id
-    username = callback.from_user.username
-    
-    # Проверяем, есть ли в сообщении фото
-    try:
-        if callback.message.photo:
-            await callback.message.edit_caption(
-                caption=get_text("language_selection.choose", "ru"),
+            # Новый пользователь - начинаем регистрацию с выбора языка
+            await message.answer(
+                get_text("language_selection.choose", "ru"),
                 reply_markup=get_language_selection_keyboard()
             )
-        else:
-            await callback.message.edit_text(
-                text=get_text("language_selection.choose", "ru"),
-                reply_markup=get_language_selection_keyboard()
-            )
-    except Exception as e:
-        # Если не получилось отредактировать, отправляем новое сообщение
-        print(f"Ошибка редактирования сообщения: {e}")
-        await callback.message.answer(
-            get_text("language_selection.choose", "ru"),
-            reply_markup=get_language_selection_keyboard()
-        )
-    
-    # Сохраняем telegram_id для последующего использования
-    await state.update_data(telegram_id=telegram_id, username=username)
-    await state.set_state(RegistrationStates.choosing_language)
+            # Сохраняем telegram_id для последующего использования
+            await state.update_data(telegram_id=telegram_id, username=username)
+            await state.set_state(RegistrationStates.choosing_language)
 
 
 @router.callback_query(F.data.startswith("lang_"))
