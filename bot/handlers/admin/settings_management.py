@@ -10,9 +10,10 @@ from services.settings_service import SettingsService
 router = Router()
 
 
-@router.message(F.text == "⚙️ Настройки")
+@router.message(F.text.in_(["⚙️ Настройки", "⚙️ Sozlamalar", "⚙️ Танзимот", "⚙️ Жөндөөлөр"]))
 async def settings_menu(message: Message, state: FSMContext):
     """Главное меню настроек системы"""
+    await state.clear()
     telegram_id = message.from_user.id
     
     async with async_session_factory() as session:

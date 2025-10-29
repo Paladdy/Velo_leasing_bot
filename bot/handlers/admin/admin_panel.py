@@ -12,9 +12,10 @@ router = Router()
 
 
 
-@router.message(F.text == "👨‍💼 Админ панель")
+@router.message(F.text.in_(["👨‍💼 Админ панель", "👨‍💼 Administrator paneli", "👨‍💼 Панели администратор", "👨‍💼 Админ панели"]))
 async def admin_panel(message: Message, state: FSMContext):
     """Вход в административную панель"""
+    await state.clear()
     print(f"🚨 ADMIN PANEL: Обработчик вызван!")
     
     telegram_id = message.from_user.id
@@ -72,9 +73,10 @@ async def admin_panel(message: Message, state: FSMContext):
     print(f"✅ DEBUG: Админ панель отправлена успешно")
 
 
-@router.message(F.text == "👨‍💼 Менеджер панель") 
+@router.message(F.text.in_(["👨‍💼 Менеджер панель", "👨‍💼 Menejer paneli", "👨‍💼 Панели менеҷер", "👨‍💼 Менеджер панели"]))
 async def manager_panel(message: Message, state: FSMContext):
     """Вход в менеджерскую панель"""
+    await state.clear()
     telegram_id = message.from_user.id
     
     async with async_session_factory() as session:
@@ -156,9 +158,10 @@ async def admin_settings_callback(callback: CallbackQuery, state: FSMContext):
 
 
 # Обработчики для текстовых кнопок из ReplyKeyboard админ панели
-@router.message(F.text == "📋 Документы")
+@router.message(F.text.in_(["📋 Документы", "📋 Hujjatlar", "📋 Ҳуҷҷатҳо", "📋 Документтер"]))
 async def admin_documents_text(message: Message, state: FSMContext):
     """Обработка текстовой кнопки Документы"""
+    await state.clear()
     telegram_id = message.from_user.id
     
     async with async_session_factory() as session:
@@ -175,9 +178,10 @@ async def admin_documents_text(message: Message, state: FSMContext):
     await documents_menu(message, state)
 
 
-@router.message(F.text == "🚴‍♂️ Велосипеды")
+@router.message(F.text.in_(["🚴‍♂️ Велосипеды", "🚴‍♂️ Velosipedlar", "🚴‍♂️ Дучархаҳо", "🚴‍♂️ Велосипеддер"]))
 async def admin_bikes_text(message: Message, state: FSMContext):
     """Обработка текстовой кнопки Велосипеды"""
+    await state.clear()
     telegram_id = message.from_user.id
     
     async with async_session_factory() as session:
@@ -199,9 +203,10 @@ async def admin_bikes_text(message: Message, state: FSMContext):
     )
 
 
-@router.message(F.text == "⚙️ Настройки")
+@router.message(F.text.in_(["⚙️ Настройки", "⚙️ Sozlamalar", "⚙️ Танзимот", "⚙️ Жөндөөлөр"]))
 async def admin_settings_text(message: Message, state: FSMContext):
     """Обработка текстовой кнопки Настройки"""
+    await state.clear()
     telegram_id = message.from_user.id
     
     async with async_session_factory() as session:

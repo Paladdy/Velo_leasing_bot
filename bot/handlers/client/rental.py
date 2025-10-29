@@ -53,8 +53,10 @@ router = Router()
 #     await state.set_state(RentalStates.choosing_rental_type)
 
 # НОВЫЙ КОД - ТОЛЬКО ОЧНАЯ АРЕНДА
-@router.message(F.text.in_(["🚴‍♂️ Арендовать", "🚴‍♂️ Иҷора кардан", "🚴‍♂️ Ijaraga olish"]))
+@router.message(F.text.in_(["🚴‍♂️ Арендовать", "🚴‍♂️ Иҷора кардан", "🚴‍♂️ Ijaraga olish", "🚴‍♂️ Ижарага алуу"]))
 async def show_rental_contacts(message: Message, state: FSMContext):
+    # Очищаем состояние, чтобы не было конфликта с регистрацией
+    await state.clear()
     """Показать контакты для очной аренды велосипеда"""
     telegram_id = message.from_user.id
     

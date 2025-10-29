@@ -7,16 +7,18 @@ from sqlalchemy.orm import selectinload
 from database.base import async_session_factory
 from database.models.user import User, UserStatus
 from database.models.document import Document, DocumentStatus, DocumentType
-from bot.keyboards.common import get_language_selection_keyboard
+from bot.keyboards.common import get_language_selection_keyboard, get_main_menu_keyboard
 from bot.utils.i18n import change_user_language, get_language_name
 from bot.utils.translations import get_text, get_user_language
 
 router = Router()
 
 
-@router.message(F.text.in_(["👤 Профиль", "👤 Профил"]))
+@router.message(F.text.in_(["👤 Профиль", "👤 Профил", "👤 Profil"]))
 async def show_profile(message: Message, state: FSMContext):
     """Показать профиль пользователя"""
+    # Очищаем состояние, чтобы не было конфликта с регистрацией
+    await state.clear()
     telegram_id = message.from_user.id
     
     async with async_session_factory() as session:
@@ -126,7 +128,7 @@ async def view_user_documents(callback: CallbackQuery, state: FSMContext):
         user = result.scalar_one_or_none()
         
         if not user or not user.documents:
-            await callback.answer("❌ Документы не найдены", show_alert=True)
+            await callback.answer(get_text("errors.documents_not_found", user.language), show_alert=True)
             return
         
         # Создаем кнопки для просмотра каждого документа
@@ -188,12 +190,23 @@ async def view_profile_document(callback: CallbackQuery, state: FSMContext):
         document = result.scalar_one_or_none()
         
         if not document:
-            await callback.answer("❌ Документ не найден", show_alert=True)
+            # Получаем язык пользователя
+            user_result = await session.execute(
+                select(User).where(User.telegram_id == callback.from_user.id)
+            )
+            user = user_result.scalar_one_or_none()
+            lang = user.language if user else "ru"
+            await callback.answer(get_text("errors.document_not_found", lang), show_alert=True)
             return
         
         # Проверяем, что это документ текущего пользователя
         if document.user.telegram_id != callback.from_user.id:
-            await callback.answer("❌ Доступ запрещен", show_alert=True)
+            user_result = await session.execute(
+                select(User).where(User.telegram_id == callback.from_user.id)
+            )
+            user = user_result.scalar_one_or_none()
+            lang = user.language if user else "ru"
+            await callback.answer(get_text("errors.access_denied", lang), show_alert=True)
             return
         
         doc_types = {
@@ -254,7 +267,7 @@ async def change_language(callback: CallbackQuery, state: FSMContext):
         user = result.scalar_one_or_none()
         
         if not user:
-            await callback.answer("❌ Пользователь не найден", show_alert=True)
+            await callback.answer(get_text("errors.user_not_found", "ru"), show_alert=True)
             return
         
         current_lang = get_language_name(user.language)
@@ -262,7 +275,8 @@ async def change_language(callback: CallbackQuery, state: FSMContext):
         messages = {
             "ru": f"🌐 **Изменение языка**\n\nТекущий язык: {current_lang}\n\nВыберите новый язык:",
             "tg": f"🌐 **Иваз кардани забон**\n\nЗабони ҷорӣ: {current_lang}\n\nЗабони навро интихоб кунед:",
-            "uz": f"🌐 **Tilni o'zgartirish**\n\nJoriy til: {current_lang}\n\nYangi tilni tanlang:"
+            "uz": f"🌐 **Tilni o'zgartirish**\n\nJoriy til: {current_lang}\n\nYangi tilni tanlang:",
+            "ky": f"🌐 **Тилди өзгөртүү**\n\nУчурдагы тил: {current_lang}\n\nЖаңы тилди тандаңыз:"
         }
         
         await callback.message.edit_text(
@@ -273,15 +287,12 @@ async def change_language(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith("lang_"))
 async def process_language_change(callback: CallbackQuery, state: FSMContext):
-    """Обработка изменения языка"""
-    # Проверяем, что это не регистрация (у зарегистрированных пользователей нет active state)
-    current_state = await state.get_state()
-    if current_state is not None:
-        # Это регистрация, не обрабатываем здесь
-        return
-    
+    """Обработка изменения языка для ЗАРЕГИСТРИРОВАННЫХ пользователей"""
     language = callback.data.split("_")[1]  # lang_ru -> ru
     telegram_id = callback.from_user.id
+    
+    # ВАЖНО: Очищаем состояние сразу, чтобы не было конфликта с регистрацией
+    await state.clear()
     
     # Изменяем язык в базе данных
     success = await change_user_language(telegram_id, language)
@@ -292,19 +303,62 @@ async def process_language_change(callback: CallbackQuery, state: FSMContext):
         success_messages = {
             "ru": f"✅ Язык успешно изменен на {lang_name}",
             "tg": f"✅ Забон ба {lang_name} иваз карда шуд",
-            "uz": f"✅ Til {lang_name}ga o'zgartirildi"
+            "uz": f"✅ Til {lang_name}ga o'zgartirildi",
+            "ky": f"✅ Тил {lang_name} өзгөртүлдү"
         }
         
-        await callback.answer(success_messages.get(language, success_messages["ru"]), show_alert=True)
-        
-        # Возвращаемся к профилю
-        fake_message = type('obj', (object,), {
-            'answer': callback.message.edit_text,
-            'from_user': callback.from_user
-        })()
-        await show_profile(fake_message, state)
+        # Получаем обновленные данные пользователя
+        async with async_session_factory() as session:
+            result = await session.execute(
+                select(User).where(User.telegram_id == telegram_id)
+            )
+            user = result.scalar_one_or_none()
+            
+            if user:
+                # Обновляем главное меню с кнопками на новом языке
+                new_keyboard = get_main_menu_keyboard(
+                    is_staff=user.is_staff,
+                    role=user.role.value,
+                    language=language
+                )
+                
+                # Отправляем сообщение с новой клавиатурой
+                await callback.message.answer(
+                    success_messages.get(language, success_messages["ru"]),
+                    reply_markup=new_keyboard
+                )
+                
+                # Обновляем inline-сообщение с профилем на новом языке
+                profile_text = get_text("profile.title", language) + "\n\n"
+                profile_text += get_text("profile.personal_data", language) + "\n"
+                profile_text += get_text("profile.name", language, name=user.full_name) + "\n"
+                
+                if user.username:
+                    profile_text += get_text("profile.username", language, username=user.username) + "\n"
+                else:
+                    profile_text += get_text("profile.username_not_set", language) + "\n"
+                
+                if user.phone:
+                    profile_text += get_text("profile.phone", language, phone=user.phone) + "\n"
+                else:
+                    profile_text += get_text("profile.phone_not_set", language) + "\n"
+                
+                profile_text += get_text("profile.language", language, lang_name=get_language_name(user.language)) + "\n\n"
+                
+                # Создаем кнопки профиля
+                profile_buttons = [
+                    [InlineKeyboardButton(
+                        text=get_text("profile.change_language", language),
+                        callback_data="profile_change_language"
+                    )]
+                ]
+                
+                await callback.message.edit_text(
+                    profile_text,
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=profile_buttons)
+                )
     else:
-        await callback.answer("❌ Ошибка при изменении языка", show_alert=True)
+        await callback.answer(get_text("errors.language_change_error", language), show_alert=True)
 
 
 @router.callback_query(F.data == "profile_back")

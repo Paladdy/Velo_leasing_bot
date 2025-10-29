@@ -7,7 +7,8 @@ def get_language_selection_keyboard() -> InlineKeyboardMarkup:
     keyboard = [
         [InlineKeyboardButton(text="Русский 🇷🇺", callback_data="lang_ru")],
         [InlineKeyboardButton(text="Тоҷикӣ 🇹🇯", callback_data="lang_tg")],
-        [InlineKeyboardButton(text="O'zbek 🇺🇿", callback_data="lang_uz")]
+        [InlineKeyboardButton(text="O'zbek 🇺🇿", callback_data="lang_uz")],
+        [InlineKeyboardButton(text="Кыргызча 🇰🇬", callback_data="lang_ky")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 

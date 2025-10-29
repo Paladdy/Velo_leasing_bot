@@ -1,5 +1,5 @@
 from aiogram import Router, F
-from aiogram.types import Message, PhotoSize, CallbackQuery
+from aiogram.types import Message, PhotoSize, CallbackQuery, URLInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -60,45 +60,131 @@ async def cmd_start(message: Message, state: FSMContext):
             
             await message.answer(welcome_text, reply_markup=keyboard)
         else:
-            # Новый пользователь - начинаем регистрацию с выбора языка
-            await message.answer(
-                get_text("language_selection.choose", "ru"),
-                reply_markup=get_language_selection_keyboard()
+            # Новый пользователь - показываем красивое приветствие с фото
+            # Используем изображение велосипеда
+            photo_url = "https://images.unsplash.com/photo-1571068316344-75bc76f77890?w=800&q=80"
+            
+            welcome_text = (
+                f"🚴 <b>Сервис аренды нового поколения.</b>\n\n"
+                f"Мы автоматизировали всю рутину,\n"
+                f"чтобы вы экономили время:\n\n"
+                f"🤝 Умная и быстрая регистрация.\n"
+                f"📝 Автоматическое создание договора аренды.\n"
+                f"💳 Онлайн-оплата и гибкие тарифы (аренда/выкуп).\n"
+                f"👤 Удобный личный кабинет для управления арендой.\n\n"
+                f"Работаем 24/7."
             )
-            # Сохраняем telegram_id для последующего использования
-            await state.update_data(telegram_id=telegram_id, username=username)
-            await state.set_state(RegistrationStates.choosing_language)
+            
+            # Создаем inline-кнопку для начала регистрации
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🚀 Начать", callback_data="start_registration")]
+            ])
+            
+            try:
+                photo = URLInputFile(photo_url)
+                await message.answer_photo(
+                    photo=photo,
+                    caption=welcome_text,
+                    reply_markup=keyboard,
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                # Если не удалось загрузить фото, отправляем просто текст
+                print(f"Ошибка загрузки фото: {e}")
+                await message.answer(
+                    welcome_text,
+                    reply_markup=keyboard,
+                    parse_mode="HTML"
+                )
+
+
+@router.callback_query(F.data == "start_registration")
+async def start_registration(callback: CallbackQuery, state: FSMContext):
+    """Начало регистрации - выбор языка"""
+    telegram_id = callback.from_user.id
+    username = callback.from_user.username
+    
+    await callback.message.edit_caption(
+        caption=get_text("language_selection.choose", "ru"),
+        reply_markup=get_language_selection_keyboard()
+    )
+    # Сохраняем telegram_id для последующего использования
+    await state.update_data(telegram_id=telegram_id, username=username)
+    await state.set_state(RegistrationStates.choosing_language)
 
 
 @router.callback_query(F.data.startswith("lang_"))
 async def process_language_selection(callback: CallbackQuery, state: FSMContext):
-    """Обработка выбора языка"""
+    """Обработка выбора языка ПРИ РЕГИСТРАЦИИ"""
+    telegram_id = callback.from_user.id
     language = callback.data.split("_")[1]  # lang_ru -> ru
+    
+    # ВАЖНО: Проверяем, что это НОВЫЙ пользователь (не зарегистрирован)
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(User).where(User.telegram_id == telegram_id)
+        )
+        existing_user = result.scalar_one_or_none()
+        
+        if existing_user:
+            # Пользователь УЖЕ зарегистрирован - пропускаем этот обработчик
+            # Его обработает обработчик из profile.py для смены языка
+            print(f"ℹ️ Пользователь {telegram_id} уже зарегистрирован, пропускаем обработчик регистрации")
+            return
+    
+    # Проверяем текущее состояние
+    current_state = await state.get_state()
+    if current_state != RegistrationStates.choosing_language:
+        # Это не регистрация, пропускаем
+        print(f"ℹ️ Неправильное состояние {current_state}, пропускаем")
+        return
     
     # Сохраняем выбранный язык в состояние
     await state.update_data(language=language)
     
     # Получаем название языка и приветственное сообщение на выбранном языке
-    lang_name = get_language_name(language)
-    language_selected = get_text("language_selection.changed", language).replace(
-        get_language_name("ru") if language == "ru" else 
-        get_language_name("tg") if language == "tg" else 
-        get_language_name("uz"),
-        lang_name
-    )
+    language_selected = get_text("language_selection.changed", language)
     
     welcome_msg = f"{language_selected}\n\n{get_text('start.welcome_new', language)}"
     
-    await callback.message.edit_text(
-        welcome_msg,
-        reply_markup=None
-    )
+    # Пытаемся отредактировать caption (если это фото) или text (если текст)
+    try:
+        if callback.message.photo:
+            await callback.message.edit_caption(
+                caption=welcome_msg,
+                reply_markup=None
+            )
+        else:
+            await callback.message.edit_text(
+                welcome_msg,
+                reply_markup=None
+            )
+    except Exception as e:
+        # Если не получилось отредактировать, отправляем новое сообщение
+        print(f"Не удалось отредактировать сообщение: {e}")
+        await callback.message.answer(welcome_msg)
+    
     await state.set_state(RegistrationStates.waiting_for_name)
 
 
 @router.message(RegistrationStates.waiting_for_name)
 async def process_name(message: Message, state: FSMContext):
     """Обработка ввода имени"""
+    telegram_id = message.from_user.id
+    
+    # ВАЖНО: Проверяем, не зарегистрирован ли пользователь уже
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(User).where(User.telegram_id == telegram_id)
+        )
+        existing_user = result.scalar_one_or_none()
+        
+        if existing_user:
+            # Пользователь уже зарегистрирован - очищаем состояние и игнорируем
+            await state.clear()
+            print(f"⚠️ Пользователь {telegram_id} уже зарегистрирован, игнорируем ввод имени")
+            return
+    
     data = await state.get_data()
     lang = data.get('language', 'ru')
     
@@ -106,7 +192,14 @@ async def process_name(message: Message, state: FSMContext):
         await message.answer(get_text("registration.name_error", lang))
         return
     
-    await state.update_data(full_name=message.text.strip())
+    # Игнорируем тексты кнопок меню (содержат эмодзи транспорта)
+    name = message.text.strip()
+    if any(emoji in name for emoji in ['🚴', '👤', '🔧', '💳', '👨‍💼']):
+        await message.answer(get_text("registration.name_error", lang))
+        await state.clear()  # Очищаем состояние
+        return
+    
+    await state.update_data(full_name=name)
     
     await message.answer(
         get_text("registration.enter_phone", lang),
@@ -118,6 +211,21 @@ async def process_name(message: Message, state: FSMContext):
 @router.message(RegistrationStates.waiting_for_phone, F.contact)
 async def process_phone_contact(message: Message, state: FSMContext):
     """Обработка получения номера телефона через контакт"""
+    telegram_id = message.from_user.id
+    
+    # ВАЖНО: Проверяем, не зарегистрирован ли пользователь уже
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(User).where(User.telegram_id == telegram_id)
+        )
+        existing_user = result.scalar_one_or_none()
+        
+        if existing_user:
+            # Пользователь уже зарегистрирован - очищаем состояние и игнорируем
+            await state.clear()
+            print(f"⚠️ Пользователь {telegram_id} уже зарегистрирован, игнорируем телефон")
+            return
+    
     phone = message.contact.phone_number
     await process_phone_number(message, state, phone)
 
@@ -125,6 +233,21 @@ async def process_phone_contact(message: Message, state: FSMContext):
 @router.message(RegistrationStates.waiting_for_phone)
 async def process_phone_text(message: Message, state: FSMContext):
     """Обработка ввода номера телефона текстом"""
+    telegram_id = message.from_user.id
+    
+    # ВАЖНО: Проверяем, не зарегистрирован ли пользователь уже
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(User).where(User.telegram_id == telegram_id)
+        )
+        existing_user = result.scalar_one_or_none()
+        
+        if existing_user:
+            # Пользователь уже зарегистрирован - очищаем состояние и игнорируем
+            await state.clear()
+            print(f"⚠️ Пользователь {telegram_id} уже зарегистрирован, игнорируем текст телефона")
+            return
+    
     data = await state.get_data()
     lang = data.get('language', 'ru')
     
@@ -153,20 +276,68 @@ async def process_phone_number(message: Message, state: FSMContext, phone: str):
     status = UserStatus.VERIFIED if telegram_id in settings.admin_ids else UserStatus.PENDING
     
     async with async_session_factory() as session:
-        user = User(
-            telegram_id=telegram_id,
-            username=username,
-            full_name=data['full_name'],
-            phone=phone,
-            role=role,
-            status=status,
-            language=language
+        # Проверяем, существует ли пользователь
+        result = await session.execute(
+            select(User).where(User.telegram_id == telegram_id)
         )
-        session.add(user)
-        await session.commit()
+        existing_user = result.scalar_one_or_none()
         
-        if role == UserRole.ADMIN:
-            print(f"✅ Новый администратор зарегистрирован: {user.full_name} (ID: {telegram_id})")
+        if existing_user:
+            # Пользователь уже существует - обновляем данные
+            existing_user.username = username
+            existing_user.full_name = data.get('full_name', existing_user.full_name)
+            existing_user.phone = phone
+            existing_user.language = language
+            # Обновляем роль и статус только если это админ
+            if telegram_id in settings.admin_ids:
+                existing_user.role = UserRole.ADMIN
+                existing_user.status = UserStatus.VERIFIED
+            await session.commit()
+            print(f"ℹ️ Обновлены данные пользователя: {existing_user.full_name} (ID: {telegram_id})")
+        else:
+            # Создаем нового пользователя
+            user = User(
+                telegram_id=telegram_id,
+                username=username,
+                full_name=data['full_name'],
+                phone=phone,
+                role=role,
+                status=status,
+                language=language
+            )
+            session.add(user)
+            await session.commit()
+            
+            if role == UserRole.ADMIN:
+                print(f"✅ Новый администратор зарегистрирован: {user.full_name} (ID: {telegram_id})")
+            else:
+                print(f"✅ Новый пользователь зарегистрирован: {user.full_name} (ID: {telegram_id})")
+    
+    # Проверяем, нет ли уже документов на проверке
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(User).where(User.telegram_id == telegram_id)
+        )
+        user = result.scalar_one_or_none()
+        
+        if user:
+            # Проверяем наличие документов со статусом PENDING
+            doc_result = await session.execute(
+                select(Document).where(
+                    Document.user_id == user.id,
+                    Document.status == DocumentStatus.PENDING
+                )
+            )
+            pending_docs = doc_result.scalars().all()
+            
+            if pending_docs:
+                # Уже есть документы на проверке
+                await message.answer(
+                    get_text("registration.documents_pending", language),
+                    reply_markup=get_main_menu_keyboard(is_staff=False, language=language)
+                )
+                await state.clear()
+                return
     
     await message.answer(
         get_text("registration.registration_complete", language),
@@ -178,8 +349,32 @@ async def process_phone_number(message: Message, state: FSMContext, phone: str):
 @router.callback_query(F.data == "doc_choice_passport")
 async def choose_passport(callback: CallbackQuery, state: FSMContext):
     """Выбор паспорта для загрузки"""
+    telegram_id = callback.from_user.id
     data = await state.get_data()
     lang = data.get('language', 'ru')
+    
+    # Проверяем, нет ли уже документов на проверке
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(User).where(User.telegram_id == telegram_id)
+        )
+        user = result.scalar_one_or_none()
+        
+        if user:
+            doc_result = await session.execute(
+                select(Document).where(
+                    Document.user_id == user.id,
+                    Document.status == DocumentStatus.PENDING
+                )
+            )
+            pending_docs = doc_result.scalars().all()
+            
+            if pending_docs:
+                await callback.answer(
+                    get_text("registration.documents_already_pending", lang),
+                    show_alert=True
+                )
+                return
     
     await state.update_data(chosen_document_type="passport")
     await callback.message.edit_text(
@@ -192,8 +387,32 @@ async def choose_passport(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "doc_choice_license")
 async def choose_license(callback: CallbackQuery, state: FSMContext):
     """Выбор водительских прав для загрузки"""
+    telegram_id = callback.from_user.id
     data = await state.get_data()
     lang = data.get('language', 'ru')
+    
+    # Проверяем, нет ли уже документов на проверке
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(User).where(User.telegram_id == telegram_id)
+        )
+        user = result.scalar_one_or_none()
+        
+        if user:
+            doc_result = await session.execute(
+                select(Document).where(
+                    Document.user_id == user.id,
+                    Document.status == DocumentStatus.PENDING
+                )
+            )
+            pending_docs = doc_result.scalars().all()
+            
+            if pending_docs:
+                await callback.answer(
+                    get_text("registration.documents_already_pending", lang),
+                    show_alert=True
+                )
+                return
     
     await state.update_data(chosen_document_type="driver_license")
     await callback.message.edit_text(
@@ -290,8 +509,10 @@ async def save_document_photo(message: Message, state: FSMContext, doc_type: Doc
         print(f"Error saving document: {e}")
 
 
-@router.message(F.text.in_(["◀️ Главное меню", "◀️ Бозгашт", "◀️ Orqaga"]))
+@router.message(F.text.in_(["◀️ Главное меню", "◀️ Бозгашт", "◀️ Orqaga", "◀️ Артка"]))
 async def back_to_main_menu(message: Message, state: FSMContext):
+    # Очищаем состояние, чтобы не было конфликта с регистрацией
+    await state.clear()
     """Возврат в главное меню"""
     telegram_id = message.from_user.id
     

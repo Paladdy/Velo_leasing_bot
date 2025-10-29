@@ -15,7 +15,7 @@ def load_translations(language: str = "ru") -> Dict[str, Any]:
     Загрузить переводы для указанного языка
     
     Args:
-        language: Код языка (ru, tg, uz)
+        language: Код языка (ru, tg, uz, ky)
         
     Returns:
         Dict с переводами
@@ -135,7 +135,7 @@ def get_translation_for_languages(key: str, languages: list = None, **kwargs) ->
     
     Args:
         key: Ключ перевода
-        languages: Список языков (по умолчанию ["ru", "tg", "uz"])
+        languages: Список языков (по умолчанию ["ru", "tg", "uz", "ky"])
         **kwargs: Параметры для форматирования
         
     Returns:
@@ -146,11 +146,12 @@ def get_translation_for_languages(key: str, languages: list = None, **kwargs) ->
         {
             "ru": "👋 Добро пожаловать обратно, Иван!",
             "tg": "👋 Хуш омадед, Иван!",
-            "uz": "👋 Xush kelibsiz, Иван!"
+            "uz": "👋 Xush kelibsiz, Иван!",
+            "ky": "👋 Кош келдиңиз, Иван!"
         }
     """
     if languages is None:
-        languages = ["ru", "tg", "uz"]
+        languages = ["ru", "tg", "uz", "ky"]
     
     return {
         lang: get_text(key, lang, **kwargs)
@@ -162,7 +163,8 @@ def get_translation_for_languages(key: str, languages: list = None, **kwargs) ->
 LANGUAGES = {
     "ru": {"code": "ru", "name": "Русский", "flag": "🇷🇺"},
     "tg": {"code": "tg", "name": "Тоҷикӣ", "flag": "🇹🇯"},
-    "uz": {"code": "uz", "name": "O'zbek", "flag": "🇺🇿"}
+    "uz": {"code": "uz", "name": "O'zbek", "flag": "🇺🇿"},
+    "ky": {"code": "ky", "name": "Кыргызча", "flag": "🇰🇬"}
 }
 
 
@@ -179,5 +181,6 @@ def get_user_language(user) -> str:
     if user and hasattr(user, 'language'):
         return user.language or "ru"
     return "ru"
+
 
 

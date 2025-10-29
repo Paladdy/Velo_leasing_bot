@@ -10,9 +10,10 @@ from database.models.rental import Rental, RentalStatus
 router = Router()
 
 
-@router.message(F.text == "🔧 Ремонт")
+@router.message(F.text.in_(["🔧 Ремонт", "🔧 Ta'mirlash", "🔧 Таъмир", "🔧 Оңдоо"]))
 async def repair_menu(message: Message, state: FSMContext):
     """Главное меню заявок на ремонт"""
+    await state.clear()
     telegram_id = message.from_user.id
     
     async with async_session_factory() as session:

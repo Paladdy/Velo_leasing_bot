@@ -17,9 +17,10 @@ router = Router()
 
 
 
-@router.message(F.text == "📋 Документы")
+@router.message(F.text.in_(["📋 Документы", "📋 Hujjatlar", "📋 Ҳуҷҷатҳо", "📋 Документтер"]))
 @router.callback_query(F.data == "admin_documents")
 async def documents_menu(message_or_callback, state: FSMContext):
+    await state.clear()
     """Главное меню проверки документов"""
     # Определяем тип события (message или callback)
     if hasattr(message_or_callback, 'message'):

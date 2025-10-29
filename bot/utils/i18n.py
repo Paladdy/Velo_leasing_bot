@@ -24,12 +24,12 @@ async def change_user_language(telegram_id: int, new_language: str) -> bool:
     
     Args:
         telegram_id: Telegram ID пользователя
-        new_language: Новый язык (ru, tg, uz)
+        new_language: Новый язык (ru, tg, uz, ky)
         
     Returns:
         bool: True если успешно изменен, False если ошибка
     """
-    if new_language not in ["ru", "tg", "uz"]:
+    if new_language not in ["ru", "tg", "uz", "ky"]:
         return False
     
     try:
@@ -54,7 +54,7 @@ def get_language_name(language_code: str) -> str:
     Получить название языка по его коду
     
     Args:
-        language_code: Код языка (ru, tg, uz)
+        language_code: Код языка (ru, tg, uz, ky)
         
     Returns:
         str: Название языка с флагом
@@ -62,7 +62,8 @@ def get_language_name(language_code: str) -> str:
     languages = {
         "ru": "Русский 🇷🇺",
         "tg": "Тоҷикӣ 🇹🇯",
-        "uz": "O'zbek 🇺🇿"
+        "uz": "O'zbek 🇺🇿",
+        "ky": "Кыргызча 🇰🇬"
     }
     return languages.get(language_code, "Русский 🇷🇺")
 

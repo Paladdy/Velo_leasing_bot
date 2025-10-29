@@ -18,9 +18,10 @@ from bot.keyboards.common import get_admin_panel_keyboard
 router = Router()
 
 
-@router.message(F.text == "🚴‍♂️ Велосипеды")
+@router.message(F.text.in_(["🚴‍♂️ Велосипеды", "🚴‍♂️ Velosipedlar", "🚴‍♂️ Дучархаҳо", "🚴‍♂️ Велосипеддер"]))
 async def bike_management_menu(message: Message, state: FSMContext):
     """Главное меню управления велосипедами"""
+    await state.clear()
     telegram_id = message.from_user.id
     
     async with async_session_factory() as session:

@@ -15,7 +15,7 @@
   },
 
   "language_selection": {
-    "choose": "🌐 Выберите язык / Забонро интихоб кунед / Tilni tanlang",
+    "choose": "🌐 Выберите язык / Забонро интихоб кунед / Tilni tanlang / Тилди тандаңыз",
     "changed": "✅ Til o'zbek tiliga o'zgartirildi"
   },
 
@@ -24,7 +24,9 @@
     "admin_rights": "\n\n👨‍💼 Sizda administrator huquqlari bor",
     "manager_rights": "\n\n👨‍💼 Sizda menejer huquqlari bor",
     "welcome_new": "👋 Velosiped ijarasi tizimiga xush kelibsiz!\n\nIshni boshlash uchun ro'yxatdan o'tish kerak.\nIltimos, to'liq ismingizni kiriting:",
-    "user_not_found": "❌ Foydalanuvchi topilmadi"
+    "user_not_found": "❌ Foydalanuvchi topilmadi",
+    "welcome_title": "🚴 Yangi avlod ijarasi xizmati.",
+    "welcome_description": "Biz barcha rutinani avtomatlashtirdik,\nsiz vaqtingizni tejashingiz uchun:\n\n🤝 Aqlli va tez ro'yxatdan o'tish.\n📝 Ijara shartnomasini avtomatik yaratish.\n💳 Onlayn to'lov va moslashuvchan tariflar (ijara/sotib olish).\n👤 Ijarani boshqarish uchun qulay shaxsiy kabinet.\n\n24/7 ishlaymiz. Boshlash uchun /start bosing"
   },
 
   "registration": {
@@ -33,7 +35,9 @@
     "enter_phone": "📱 Ajoyib! Endi telefon raqamingizni ulashing:",
     "phone_error": "📱 Iltimos, telefon raqamini ulashing yoki qo'lda kiriting",
     "registration_complete": "✅ Ajoyib! Ro'yxatdan o'tish yakunlandi.\n\n📄 Velosiped ijarasi uchun hujjatlarni yuklash kerak:\n• Pasport YOKI Haydovchilik guvohnomasi (tanlang)\n• Tanlangan hujjat bilan selfi\n\nQaysi hujjatni yuklashni tanlang:",
-    "thank_you": "✅ Barcha hujjatlar yuklandi!\n\n📋 Hujjatlaringiz administratorga tekshiruv uchun yuborildi.\n⏰ Odatda tekshiruv 24 soatgacha davom etadi.\n📱 Hujjatlar tekshirilgandan so'ng sizga xabar beramiz.\n\nRo'yxatdan o'tganingiz uchun rahmat! 🚴‍♂️"
+    "thank_you": "✅ Barcha hujjatlar yuklandi!\n\n📋 Hujjatlaringiz administratorga tekshiruv uchun yuborildi.\n⏰ Odatda tekshiruv 24 soatgacha davom etadi.\n📱 Hujjatlar tekshirilgandan so'ng sizga xabar beramiz.\n\nRo'yxatdan o'tganingiz uchun rahmat! 🚴‍♂️",
+    "documents_pending": "⏳ Sizda allaqachon tekshiruvda hujjatlar bor.\n\nAdministratordan tekshiruv natijalarini kuting. Tekshiruvdan so'ng kerak bo'lsa yangi hujjatlarni yuklashingiz mumkin.\n\n📱 Tekshiruv tugagach sizga xabar yuboriladi.",
+    "documents_already_pending": "⏳ Sizda allaqachon tekshiruvda hujjatlar bor. Tekshiruv natijalarini kuting."
   },
 
   "documents": {
@@ -125,6 +129,34 @@
 
   "buttons": {
     "share_phone": "📱 Telefon raqamini ulashish"
+  },
+
+  "errors": {
+    "user_not_found": "❌ Foydalanuvchi topilmadi",
+    "document_not_found": "❌ Hujjat topilmadi",
+    "documents_not_found": "❌ Hujjatlar topilmadi",
+    "access_denied": "❌ Kirish taqiqlangan",
+    "bike_not_found": "❌ Velosiped topilmadi",
+    "bike_unavailable": "❌ Velosiped mavjud emas",
+    "no_admin_rights": "❌ Sizda administrator huquqlari yo'q",
+    "no_manager_rights": "❌ Sizda menejer huquqlari yo'q",
+    "no_settings_rights": "❌ Sizda sozlamalarni o'zgartirish huquqlari yo'q",
+    "no_bike_management_rights": "❌ Sizda velosipedlarni boshqarish huquqlari yo'q",
+    "no_document_verification_rights": "❌ Sizda hujjatlarni tekshirish huquqlari yo'q",
+    "language_change_error": "❌ Tilni o'zgartirishda xatolik",
+    "registration_required": "❌ Foydalanuvchi topilmadi. Iltimos, /start buyrug'i bilan ro'yxatdan o'ting",
+    "unknown_action": "❌ Noma'lum harakat",
+    "invalid_hours": "❌ Iltimos, to'g'ri ish vaqtini kiriting",
+    "invalid_address": "❌ Iltimos, to'g'ri manzilni kiriting (kamida 10 ta belgi)",
+    "invalid_phone": "❌ Iltimos, to'g'ri telefon raqamini kiriting",
+    "update_error": "❌ Yangilashda xatolik"
+  },
+
+  "success_messages": {
+    "hours_updated": "✅ Ish vaqti yangilandi!",
+    "address_updated": "✅ Manzil yangilandi!",
+    "phone_updated": "✅ Telefon yangilandi!",
+    "settings_updated": "✅ Sozlamalar yangilandi!"
   }
 }
 
