@@ -291,6 +291,19 @@ async def process_language_change(callback: CallbackQuery, state: FSMContext):
     language = callback.data.split("_")[1]  # lang_ru -> ru
     telegram_id = callback.from_user.id
     
+    # ВАЖНО: Проверяем, что пользователь ЗАРЕГИСТРИРОВАН
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(User).where(User.telegram_id == telegram_id)
+        )
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            # Пользователь НЕ зарегистрирован - это регистрация
+            # Пропускаем, пусть обработает start.py
+            print(f"ℹ️ Пользователь {telegram_id} не найден в profile handler, пропускаем")
+            return
+    
     # ВАЖНО: Очищаем состояние сразу, чтобы не было конфликта с регистрацией
     await state.clear()
     
