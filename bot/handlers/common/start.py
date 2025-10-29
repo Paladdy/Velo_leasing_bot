@@ -104,10 +104,26 @@ async def start_registration(callback: CallbackQuery, state: FSMContext):
     telegram_id = callback.from_user.id
     username = callback.from_user.username
     
-    await callback.message.edit_caption(
-        caption=get_text("language_selection.choose", "ru"),
-        reply_markup=get_language_selection_keyboard()
-    )
+    # Проверяем, есть ли в сообщении фото
+    try:
+        if callback.message.photo:
+            await callback.message.edit_caption(
+                caption=get_text("language_selection.choose", "ru"),
+                reply_markup=get_language_selection_keyboard()
+            )
+        else:
+            await callback.message.edit_text(
+                text=get_text("language_selection.choose", "ru"),
+                reply_markup=get_language_selection_keyboard()
+            )
+    except Exception as e:
+        # Если не получилось отредактировать, отправляем новое сообщение
+        print(f"Ошибка редактирования сообщения: {e}")
+        await callback.message.answer(
+            get_text("language_selection.choose", "ru"),
+            reply_markup=get_language_selection_keyboard()
+        )
+    
     # Сохраняем telegram_id для последующего использования
     await state.update_data(telegram_id=telegram_id, username=username)
     await state.set_state(RegistrationStates.choosing_language)
