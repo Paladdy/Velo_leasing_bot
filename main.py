@@ -16,6 +16,8 @@ from bot.handlers.admin.admin_panel import router as admin_panel_router
 from bot.handlers.admin.bike_management import router as bike_management_router
 from bot.handlers.admin.document_verification import router as document_verification_router
 from bot.handlers.admin.settings_management import router as settings_management_router
+from bot.utils.redis_storage import init_registration_storage
+from services.cleanup_service import run_periodic_cleanup
 
 
 async def main():
@@ -42,9 +44,14 @@ async def main():
         await redis_client.ping()
         storage = RedisStorage(redis_client)
         logger.info("✅ Подключение к Redis успешно")
+        
+        # Инициализируем хранилище для данных регистрации
+        init_registration_storage(redis_client)
+        logger.info("✅ Registration storage инициализирован")
     except Exception as e:
         # Если Redis недоступен, используем память
         logger.warning(f"⚠️ Redis недоступен ({e}), используем MemoryStorage")
+        logger.warning("⚠️ Регистрация пользователей может работать некорректно без Redis")
         storage = MemoryStorage()
     
     dp = Dispatcher(storage=storage)
@@ -77,6 +84,12 @@ async def main():
         await init_db()
         logger.info("✅ База данных инициализирована")
         
+        # Запускаем cleanup задачу в фоне
+        cleanup_task = asyncio.create_task(
+            run_periodic_cleanup(interval_hours=1, max_file_age_hours=48)
+        )
+        logger.info("🧹 Cleanup service запущен (проверка каждый час)")
+        
         # Запуск бота
         logger.info("🤖 Бот запущен и готов к работе!")
         await dp.start_polling(bot)
@@ -85,6 +98,14 @@ async def main():
         logger.error(f"❌ Ошибка при запуске: {e}")
         raise
     finally:
+        # Останавливаем cleanup задачу
+        if 'cleanup_task' in locals():
+            cleanup_task.cancel()
+            try:
+                await cleanup_task
+            except asyncio.CancelledError:
+                pass
+        
         await bot.session.close()
         if hasattr(storage, 'close'):
             await storage.close()

@@ -15,6 +15,8 @@ from bot.states.registration import RegistrationStates
 from config.settings import settings
 from bot.utils.i18n import change_user_language, get_language_name
 from bot.utils.translations import get_text, get_user_language
+from bot.utils.redis_storage import get_registration_storage
+from services.registration_service import RegistrationService
 
 router = Router()
 
@@ -60,14 +62,35 @@ async def cmd_start(message: Message, state: FSMContext):
             
             await message.answer(welcome_text, reply_markup=keyboard)
         else:
-            # Новый пользователь - начинаем регистрацию с выбора языка
-            await message.answer(
-                get_text("language_selection.choose", "ru"),
-                reply_markup=get_language_selection_keyboard(for_registration=True)
-            )
-            # Сохраняем telegram_id для последующего использования
-            await state.update_data(telegram_id=telegram_id, username=username)
-            await state.set_state(RegistrationStates.choosing_language)
+            # Проверяем, есть ли незавершенная регистрация в Redis
+            storage = get_registration_storage()
+            registration_data = await storage.get_all_registration_data(telegram_id)
+            
+            if registration_data:
+                # Есть незавершенная регистрация
+                lang = registration_data.get('language', 'ru')
+                missing = await storage.get_missing_data(telegram_id, lang)
+                
+                print(f"📋 Incomplete registration found for {telegram_id}: {missing}")
+                
+                # Продлеваем TTL
+                await storage.extend_ttl(telegram_id)
+                
+                await message.answer(
+                    get_text("registration.continue_registration", lang),
+                    reply_markup=get_document_choice_keyboard(lang)
+                )
+                await state.update_data(language=lang, telegram_id=telegram_id, username=username)
+                await state.set_state(RegistrationStates.choosing_document_type)
+            else:
+                # Новый пользователь - начинаем регистрацию с выбора языка
+                await message.answer(
+                    get_text("language_selection.choose", "ru"),
+                    reply_markup=get_language_selection_keyboard(for_registration=True)
+                )
+                # Сохраняем telegram_id для последующего использования
+                await state.update_data(telegram_id=telegram_id, username=username)
+                await state.set_state(RegistrationStates.choosing_language)
 
 
 @router.callback_query(F.data.startswith("register_lang_"))
@@ -196,78 +219,54 @@ async def process_phone_text(message: Message, state: FSMContext):
 
 
 async def process_phone_number(message: Message, state: FSMContext, phone: str):
-    """Общая обработка номера телефона"""
-    await state.update_data(phone=phone)
-    
-    # Создаем пользователя в базе данных
+    """
+    Общая обработка номера телефона.
+    НОВАЯ ЛОГИКА: Сохраняем данные в Redis, не создаем пользователя в БД сразу.
+    """
     telegram_id = message.from_user.id
     username = message.from_user.username
     data = await state.get_data()
-    
-    # Получаем выбранный язык (по умолчанию русский)
     language = data.get('language', 'ru')
+    full_name = data.get('full_name', '')
     
-    # Определяем роль и статус на основе ADMIN_IDS
-    role = UserRole.ADMIN if telegram_id in settings.admin_ids else UserRole.CLIENT
-    status = UserStatus.VERIFIED if telegram_id in settings.admin_ids else UserStatus.PENDING
-    
+    # Проверяем, не зарегистрирован ли пользователь уже в PostgreSQL
     async with async_session_factory() as session:
-        # Проверяем, существует ли пользователь
         result = await session.execute(
             select(User).where(User.telegram_id == telegram_id)
         )
         existing_user = result.scalar_one_or_none()
         
         if existing_user:
-            # Пользователь уже существует - обновляем данные
-            existing_user.username = username
-            existing_user.full_name = data.get('full_name', existing_user.full_name)
-            existing_user.phone = phone
-            existing_user.language = language
-            # Обновляем роль и статус только если это админ
+            # Пользователь уже в БД - это повторная регистрация или обновление
+            print(f"ℹ️ Пользователь {telegram_id} уже существует в БД")
+            
+            # Если это админ - просто обновляем данные
             if telegram_id in settings.admin_ids:
+                existing_user.username = username
+                existing_user.full_name = full_name
+                existing_user.phone = phone
+                existing_user.language = language
                 existing_user.role = UserRole.ADMIN
                 existing_user.status = UserStatus.VERIFIED
-            await session.commit()
-            print(f"ℹ️ Обновлены данные пользователя: {existing_user.full_name} (ID: {telegram_id})")
-        else:
-            # Создаем нового пользователя
-            user = User(
-                telegram_id=telegram_id,
-                username=username,
-                full_name=data['full_name'],
-                phone=phone,
-                role=role,
-                status=status,
-                language=language
-            )
-            session.add(user)
-            await session.commit()
+                await session.commit()
+                
+                await message.answer(
+                    get_text("start.welcome_back", language, name=full_name),
+                    reply_markup=get_main_menu_keyboard(is_staff=True, role="ADMIN", language=language)
+                )
+                await state.clear()
+                return
             
-            if role == UserRole.ADMIN:
-                print(f"✅ Новый администратор зарегистрирован: {user.full_name} (ID: {telegram_id})")
-            else:
-                print(f"✅ Новый пользователь зарегистрирован: {user.full_name} (ID: {telegram_id})")
-    
-    # Проверяем, нет ли уже документов на проверке
-    async with async_session_factory() as session:
-        result = await session.execute(
-            select(User).where(User.telegram_id == telegram_id)
-        )
-        user = result.scalar_one_or_none()
-        
-        if user:
-            # Проверяем наличие документов со статусом PENDING
+            # Для обычных пользователей - проверяем документы
             doc_result = await session.execute(
                 select(Document).where(
-                    Document.user_id == user.id,
+                    Document.user_id == existing_user.id,
                     Document.status == DocumentStatus.PENDING
                 )
             )
             pending_docs = doc_result.scalars().all()
             
             if pending_docs:
-                # Уже есть документы на проверке
                 await message.answer(
                     get_text("registration.documents_pending", language),
                     reply_markup=get_main_menu_keyboard(is_staff=False, language=language)
@@ -275,10 +274,32 @@ async def process_phone_number(message: Message, state: FSMContext, phone: str):
                 await state.clear()
                 return
     
-    await message.answer(
-        get_text("registration.registration_complete", language),
-        reply_markup=get_document_choice_keyboard(language)
-    )
+    # НОВАЯ ЛОГИКА: Сохраняем данные в Redis (staging area)
+    storage = get_registration_storage()
+    
+    user_data = {
+        "full_name": full_name,
+        "phone": phone,
+        "username": username,
+        "email": data.get('email')  # Опционально
+    }
+    
+    await storage.set_user_data(telegram_id, user_data)
+    print(f"✅ User data saved to Redis: {telegram_id} -> {full_name}")
+    
+    # Проверяем, есть ли уже документы в Redis (незавершенная регистрация)
+    documents = await storage.get_documents(telegram_id)
+    if documents and len(documents) >= 2:
+        await message.answer(
+            get_text("registration.resume_registration", language),
+            reply_markup=get_document_choice_keyboard(language)
+        )
+    else:
+        await message.answer(
+            get_text("registration.registration_complete", language),
+            reply_markup=get_document_choice_keyboard(language)
+        )
+    
     await state.set_state(RegistrationStates.choosing_document_type)
 
 
@@ -394,83 +415,95 @@ async def process_selfie_photo(message: Message, state: FSMContext):
 
 
 async def save_document_photo(message: Message, state: FSMContext, doc_type: DocumentType, response_text: str):
-    """Сохранение фото документа"""
+    """
+    Сохранение фото документа.
+    НОВАЯ ЛОГИКА: Сохраняем file_id в Redis, а не скачиваем файл сразу.
+    Атомарное сохранение в БД происходит после загрузки ВСЕХ документов.
+    """
     telegram_id = message.from_user.id
-    
-    # Создаем папку для загрузок, если её нет
-    # Используем абсолютный путь от корня проекта
-    if os.path.isabs(settings.upload_path):
-        upload_dir = Path(settings.upload_path)
-    else:
-        # Получаем абсолютный путь от текущей директории проекта
-        project_root = Path(__file__).parent.parent.parent
-        upload_dir = project_root / settings.upload_path
-    
-    # Создаем директорию с parents=True для создания всех промежуточных директорий
-    try:
-        upload_dir.mkdir(parents=True, exist_ok=True)
-        print(f"✅ Upload directory created/verified: {upload_dir.absolute()}")
-    except Exception as e:
-        print(f"❌ Error creating upload directory {upload_dir.absolute()}: {e}")
-        data = await state.get_data()
-        lang = data.get('language', 'ru')
-        await message.answer(get_text("documents.save_error", lang))
-        return
+    data = await state.get_data()
+    lang = data.get('language', 'ru')
     
     # Получаем самое большое фото
     photo = message.photo[-1]
-    
-    # Генерируем имя файла
-    file_extension = "jpg"
-    filename = f"{telegram_id}_{doc_type.value}_{photo.file_id}.{file_extension}"
-    file_path = upload_dir / filename
+    file_id = photo.file_id
     
     try:
-        # Скачиваем файл
-        print(f"📥 Downloading document to: {file_path.absolute()}")
-        file_info = await message.bot.get_file(photo.file_id)
-        await message.bot.download_file(file_info.file_path, file_path)
-        print(f"✅ Document downloaded successfully: {file_path.absolute()}")
+        # Сохраняем file_id в Redis
+        storage = get_registration_storage()
+        doc_type_str = doc_type.value  # "passport", "driver_license" или "selfie"
         
-        # Сохраняем в базу данных
-        async with async_session_factory() as session:
-            # Находим пользователя
-            result = await session.execute(
-                select(User).where(User.telegram_id == telegram_id)
-            )
-            user = result.scalar_one_or_none()
-            
-            if user:
-                # Создаем запись документа
-                document = Document(
-                    user_id=user.id,
-                    document_type=doc_type,
-                    file_path=str(file_path.absolute()),
-                    original_filename=filename,
-                    file_size=photo.file_size,
-                    status=DocumentStatus.PENDING
-                )
-                session.add(document)
-                await session.commit()
-                print(f"✅ Document saved to database: {doc_type.value} for user {user.full_name}")
+        await storage.set_document(telegram_id, doc_type_str, file_id)
+        print(f"✅ Document file_id saved to Redis: {telegram_id} -> {doc_type_str} (file_id: {file_id[:20]}...)")
         
         await message.answer(response_text)
         
-    except PermissionError as e:
-        # Специальная обработка ошибки доступа
-        data = await state.get_data()
-        lang = data.get('language', 'ru')
-        await message.answer(get_text("documents.save_error", lang))
-        print(f"❌ Permission denied saving document to {file_path.absolute()}: {e}")
-        print(f"   Directory permissions: {oct(os.stat(upload_dir).st_mode)[-3:]}")
+        # Проверяем, загружены ли все обязательные документы
+        is_complete = await storage.is_registration_complete(telegram_id)
+        
+        if is_complete:
+            print(f"🎉 All documents collected! Starting atomic registration for {telegram_id}")
+            
+            # Получаем все данные из Redis
+            registration_data = await storage.get_all_registration_data(telegram_id)
+            
+            if not registration_data:
+                await message.answer(get_text("documents.save_error", lang))
+                return
+            
+            # Атомарно создаем пользователя + все документы в PostgreSQL
+            try:
+                async with async_session_factory() as session:
+                    async with session.begin():  # Открываем транзакцию
+                        registration_service = RegistrationService(message.bot)
+                        
+                        user = await registration_service.register_user_with_documents(
+                            session=session,
+                            telegram_id=telegram_id,
+                            user_data=registration_data['user_data'],
+                            documents_file_ids=registration_data['documents'],
+                            language=registration_data['language']
+                        )
+                        
+                        # Если всё прошло успешно, commit произойдет автоматически при выходе из async with
+                        print(f"✅ Atomic registration completed for user {user.id}")
+                
+                # Очищаем Redis после успешной регистрации
+                await storage.clear_registration_data(telegram_id)
+                print(f"🧹 Redis data cleared for {telegram_id}")
+                
+                # Уведомляем пользователя об успешной регистрации
+                await message.answer(
+                    get_text("registration.thank_you", lang),
+                    reply_markup=get_main_menu_keyboard(is_staff=False, language=lang)
+                )
+                await state.clear()
+                
+                print(f"{'='*60}")
+                print(f"🎉 Registration complete for user {telegram_id}")
+                print(f"{'='*60}\n")
+                
+            except Exception as e:
+                # При ошибке транзакция откатится автоматически
+                print(f"❌ Atomic registration failed: {e}")
+                import traceback
+                traceback.print_exc()
+                
+                await message.answer(
+                    get_text("documents.save_error", lang) + "\n\n" +
+                    "⚠️ Ваши данные сохранены. Попробуйте отправить команду /start и продолжить регистрацию."
+                )
+                # Данные остаются в Redis, пользователь может повторить попытку
+        else:
+            # Не все документы загружены - продолжаем
+            missing = await storage.get_missing_data(telegram_id, lang)
+            print(f"ℹ️ Missing documents for {telegram_id}: {missing}")
+        
     except Exception as e:
-        # Пытаемся получить язык из состояния
-        data = await state.get_data()
-        lang = data.get('language', 'ru')
-        await message.answer(get_text("documents.save_error", lang))
-        print(f"❌ Error saving document: {e}")
+        print(f"❌ Error saving document to Redis: {e}")
         import traceback
         traceback.print_exc()
+        await message.answer(get_text("documents.save_error", lang))
 
 
 @router.message(F.text.in_(["◀️ Главное меню", "◀️ Бозгашт", "◀️ Orqaga", "◀️ Артка"]))
