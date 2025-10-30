@@ -398,8 +398,24 @@ async def save_document_photo(message: Message, state: FSMContext, doc_type: Doc
     telegram_id = message.from_user.id
     
     # Создаем папку для загрузок, если её нет
-    upload_dir = Path(settings.upload_path)
-    upload_dir.mkdir(exist_ok=True)
+    # Используем абсолютный путь от корня проекта
+    if os.path.isabs(settings.upload_path):
+        upload_dir = Path(settings.upload_path)
+    else:
+        # Получаем абсолютный путь от текущей директории проекта
+        project_root = Path(__file__).parent.parent.parent
+        upload_dir = project_root / settings.upload_path
+    
+    # Создаем директорию с parents=True для создания всех промежуточных директорий
+    try:
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        print(f"✅ Upload directory created/verified: {upload_dir.absolute()}")
+    except Exception as e:
+        print(f"❌ Error creating upload directory {upload_dir.absolute()}: {e}")
+        data = await state.get_data()
+        lang = data.get('language', 'ru')
+        await message.answer(get_text("documents.save_error", lang))
+        return
     
     # Получаем самое большое фото
     photo = message.photo[-1]
@@ -411,8 +427,10 @@ async def save_document_photo(message: Message, state: FSMContext, doc_type: Doc
     
     try:
         # Скачиваем файл
+        print(f"📥 Downloading document to: {file_path.absolute()}")
         file_info = await message.bot.get_file(photo.file_id)
         await message.bot.download_file(file_info.file_path, file_path)
+        print(f"✅ Document downloaded successfully: {file_path.absolute()}")
         
         # Сохраняем в базу данных
         async with async_session_factory() as session:
@@ -427,22 +445,32 @@ async def save_document_photo(message: Message, state: FSMContext, doc_type: Doc
                 document = Document(
                     user_id=user.id,
                     document_type=doc_type,
-                    file_path=str(file_path),
+                    file_path=str(file_path.absolute()),
                     original_filename=filename,
                     file_size=photo.file_size,
                     status=DocumentStatus.PENDING
                 )
                 session.add(document)
                 await session.commit()
+                print(f"✅ Document saved to database: {doc_type.value} for user {user.full_name}")
         
         await message.answer(response_text)
         
+    except PermissionError as e:
+        # Специальная обработка ошибки доступа
+        data = await state.get_data()
+        lang = data.get('language', 'ru')
+        await message.answer(get_text("documents.save_error", lang))
+        print(f"❌ Permission denied saving document to {file_path.absolute()}: {e}")
+        print(f"   Directory permissions: {oct(os.stat(upload_dir).st_mode)[-3:]}")
     except Exception as e:
         # Пытаемся получить язык из состояния
         data = await state.get_data()
         lang = data.get('language', 'ru')
         await message.answer(get_text("documents.save_error", lang))
-        print(f"Error saving document: {e}")
+        print(f"❌ Error saving document: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 @router.message(F.text.in_(["◀️ Главное меню", "◀️ Бозгашт", "◀️ Orqaga", "◀️ Артка"]))
