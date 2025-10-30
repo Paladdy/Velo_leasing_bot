@@ -117,9 +117,7 @@ class RegistrationService:
             email=user_data.get("email"),
             language=language,
             role=UserRole.CLIENT,
-            status=UserStatus.PENDING,  # Статус "на проверке"
-            is_staff=False,
-            can_verify_documents=False
+            status=UserStatus.PENDING  # Статус "на проверке"
         )
         
         session.add(user)
