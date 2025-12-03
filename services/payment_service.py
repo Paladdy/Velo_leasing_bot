@@ -43,6 +43,9 @@ class YooKassaService:
     
     def _get_auth(self) -> Optional[aiohttp.BasicAuth]:
         """Получить авторизацию для запросов к API (Basic Auth)"""
+        # Если есть OAuth токен - не используем Basic Auth
+        if self.oauth_token:
+            return None
         if self.shop_id and self.secret_key:
             return aiohttp.BasicAuth(self.shop_id, self.secret_key)
         return None
