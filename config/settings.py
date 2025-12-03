@@ -14,9 +14,10 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = Field(default="redis://localhost:6379/0", env="REDIS_URL")
     
-    # Payment System
-    yookassa_shop_id: str = Field(..., env="YOOKASSA_SHOP_ID")
-    yookassa_secret_key: str = Field(..., env="YOOKASSA_SECRET_KEY")
+    # Payment System (ЮKassa)
+    yookassa_shop_id: str = Field(default="", env="YOOKASSA_SHOP_ID")
+    yookassa_secret_key: str = Field(default="", env="YOOKASSA_SECRET_KEY")
+    yookassa_oauth_token: str = Field(default="", env="YOOKASSA_OAUTH_TOKEN")  # OAuth токен
     
     # File Storage
     upload_path: str = Field(default="./uploads", env="UPLOAD_PATH")

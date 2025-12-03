@@ -8,6 +8,8 @@ import enum
 class RentalType(enum.Enum):
     HOURLY = "hourly"           # Почасовая
     DAILY = "daily"             # Посуточная
+    BIWEEKLY = "biweekly"       # 2 недели - 6500₽
+    MONTHLY = "monthly"         # Месяц - 12600₽
     INSTALLMENT = "installment" # Рассрочка/выкуп
     CUSTOM = "custom"           # Индивидуальная
 

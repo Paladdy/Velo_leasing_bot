@@ -12,12 +12,15 @@ from bot.handlers.common.start import router as start_router
 from bot.handlers.client.rental import router as rental_router
 from bot.handlers.client.profile import router as profile_router
 from bot.handlers.client.repair import router as repair_router
+from bot.handlers.client.extension import router as extension_router
 from bot.handlers.admin.admin_panel import router as admin_panel_router
 from bot.handlers.admin.bike_management import router as bike_management_router
 from bot.handlers.admin.document_verification import router as document_verification_router
 from bot.handlers.admin.settings_management import router as settings_management_router
 from bot.utils.redis_storage import init_registration_storage
 from services.cleanup_service import run_periodic_cleanup
+from services.webhook_server import run_webhook_server
+import os
 
 
 async def main():
@@ -72,6 +75,7 @@ async def main():
     dp.include_router(rental_router)
     dp.include_router(profile_router)
     dp.include_router(repair_router)
+    dp.include_router(extension_router)
     
     # 4. Настройки (могут содержать универсальные обработчики)
     dp.include_router(settings_management_router)
@@ -90,6 +94,15 @@ async def main():
         )
         logger.info("🧹 Cleanup service запущен (проверка каждый час)")
         
+        # Опционально запускаем webhook сервер для ЮKassa
+        webhook_task = None
+        if os.getenv("ENABLE_WEBHOOK_SERVER", "false").lower() == "true":
+            webhook_port = int(os.getenv("WEBHOOK_PORT", "8080"))
+            webhook_task = asyncio.create_task(
+                run_webhook_server(host="0.0.0.0", port=webhook_port)
+            )
+            logger.info(f"🌐 Webhook сервер для ЮKassa запущен на порту {webhook_port}")
+        
         # Запуск бота
         logger.info("🤖 Бот запущен и готов к работе!")
         await dp.start_polling(bot)
@@ -103,6 +116,14 @@ async def main():
             cleanup_task.cancel()
             try:
                 await cleanup_task
+            except asyncio.CancelledError:
+                pass
+        
+        # Останавливаем webhook сервер
+        if 'webhook_task' in locals() and webhook_task:
+            webhook_task.cancel()
+            try:
+                await webhook_task
             except asyncio.CancelledError:
                 pass
         
