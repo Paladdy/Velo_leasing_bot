@@ -10,7 +10,7 @@ from loguru import logger
 from database.base import async_session_factory
 from database.models.user import User, UserStatus
 from database.models.rental import Rental, RentalStatus
-from services.payment_service import rental_extension_service, YooKassaService
+from services.payment_service import rental_extension_service, TochkaService
 from bot.utils.translations import get_text, get_user_language
 from sqlalchemy import select
 
@@ -20,7 +20,7 @@ router = Router()
 
 def get_extension_tariffs_keyboard(lang: str = "ru") -> InlineKeyboardMarkup:
     """Клавиатура выбора тарифа для продления"""
-    tariffs = YooKassaService.TARIFFS
+    tariffs = TochkaService.TARIFFS
     
     buttons = []
     for key, tariff in tariffs.items():
@@ -172,7 +172,7 @@ async def select_rental_for_extension(callback: CallbackQuery, state: FSMContext
         "📅 **Выберите период продления:**\n\n"
         "• **2 недели** — 6 500 ₽\n"
         "• **Месяц** — 12 600 ₽\n\n"
-        "💳 Оплата онлайн через ЮKassa"
+        "💳 Оплата онлайн через Точка Банк"
     )
     
     await callback.message.edit_text(
@@ -194,7 +194,7 @@ async def select_tariff(callback: CallbackQuery, state: FSMContext):
         await callback.answer("❌ Ошибка: аренда не выбрана", show_alert=True)
         return
     
-    tariff = YooKassaService.TARIFFS.get(tariff_key)
+    tariff = TochkaService.TARIFFS.get(tariff_key)
     if not tariff:
         await callback.answer("❌ Неизвестный тариф", show_alert=True)
         return
@@ -255,7 +255,7 @@ async def confirm_extension(callback: CallbackQuery, state: FSMContext):
         )
         return
     
-    tariff = YooKassaService.TARIFFS.get(tariff_key)
+    tariff = TochkaService.TARIFFS.get(tariff_key)
     
     # Показываем ссылку на оплату
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -355,7 +355,7 @@ async def back_to_tariffs(callback: CallbackQuery, state: FSMContext):
         "📅 **Выберите период продления:**\n\n"
         "• **2 недели** — 6 500 ₽\n"
         "• **Месяц** — 12 600 ₽\n\n"
-        "💳 Оплата онлайн через ЮKassa"
+        "💳 Оплата онлайн через Точка Банк"
     )
     
     await callback.message.edit_text(

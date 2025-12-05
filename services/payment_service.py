@@ -1,5 +1,5 @@
 """
-Сервис интеграции с ЮKassa для обработки платежей
+Сервис интеграции с Точка Банком для обработки платежей
 """
 import aiohttp
 import json
@@ -15,10 +15,11 @@ from database.models.payment import Payment, PaymentStatus, PaymentType
 from database.models.rental import Rental, RentalStatus
 
 
-class YooKassaService:
-    """Сервис для работы с API ЮKassa"""
+class TochkaService:
+    """Сервис для работы с API Точка Банка"""
     
-    BASE_URL = "https://api.yookassa.ru/v3"
+    # API URL для Open Banking
+    BASE_URL = "https://enter.tochka.com/uapi/open-banking/v1.0"
     
     # Тарифы аренды
     TARIFFS = {
@@ -37,33 +38,19 @@ class YooKassaService:
     }
     
     def __init__(self):
-        self.shop_id = settings.yookassa_shop_id
-        self.secret_key = settings.yookassa_secret_key
-        self.oauth_token = settings.yookassa_oauth_token
-    
-    def _get_auth(self) -> Optional[aiohttp.BasicAuth]:
-        """Получить авторизацию для запросов к API (Basic Auth)"""
-        # Если есть OAuth токен - не используем Basic Auth
-        if self.oauth_token:
-            return None
-        if self.shop_id and self.secret_key:
-            return aiohttp.BasicAuth(self.shop_id, self.secret_key)
-        return None
+        self.jwt_token = settings.tochka_jwt_token
+        self.customer_code = settings.tochka_customer_code
+        self.merchant_id = settings.tochka_merchant_id
     
     def _get_headers(self) -> Dict[str, str]:
         """Получить заголовки для запросов"""
-        headers = {
+        return {
             "Content-Type": "application/json",
-            "Idempotence-Key": str(uuid.uuid4())
+            "Authorization": f"Bearer {self.jwt_token}",
+            "X-Request-Id": str(uuid.uuid4())
         }
-        
-        # Если есть OAuth токен - используем его
-        if self.oauth_token:
-            headers["Authorization"] = f"Bearer {self.oauth_token}"
-        
-        return headers
     
-    async def create_payment(
+    async def create_payment_link(
         self,
         amount: Decimal,
         description: str,
@@ -74,7 +61,7 @@ class YooKassaService:
         metadata: Optional[Dict[str, Any]] = None
     ) -> Optional[Dict[str, Any]]:
         """
-        Создать платёж в ЮKassa
+        Создать платёжную ссылку через Точка Банк
         
         Args:
             amount: Сумма платежа
@@ -86,45 +73,52 @@ class YooKassaService:
             metadata: Дополнительные данные
         
         Returns:
-            Данные платежа от ЮKassa или None при ошибке
+            Данные платежа или None при ошибке
         """
         try:
+            # Генерируем уникальный ID платежа
+            payment_id = str(uuid.uuid4())
+            
+            # Формируем данные для создания платёжной ссылки
             payload = {
-                "amount": {
-                    "value": str(amount),
-                    "currency": "RUB"
-                },
-                "capture": True,  # Автоматический захват платежа
-                "confirmation": {
-                    "type": "redirect",
-                    "return_url": return_url
-                },
-                "description": description,
-                "metadata": {
-                    "user_id": user_id,
-                    "rental_id": rental_id,
-                    "payment_type": payment_type.value,
-                    **(metadata or {})
+                "Data": {
+                    "amount": str(amount),
+                    "currency": "RUB",
+                    "purpose": description,
+                    "redirectUrl": return_url,
+                    "customerCode": self.customer_code,
+                    "paymentId": payment_id
                 }
             }
             
+            # Если есть merchant_id для эквайринга
+            if self.merchant_id:
+                payload["Data"]["merchantId"] = self.merchant_id
+            
             async with aiohttp.ClientSession() as session:
-                auth = self._get_auth()
                 headers = self._get_headers()
                 
+                # Endpoint для создания платёжной ссылки
+                url = f"{self.BASE_URL}/{self.customer_code}/payment-link"
+                
+                logger.info(f"Создание платёжной ссылки Точка: {url}")
+                logger.debug(f"Payload: {json.dumps(payload, ensure_ascii=False)}")
+                
                 async with session.post(
-                    f"{self.BASE_URL}/payments",
+                    url,
                     json=payload,
-                    auth=auth,
                     headers=headers
                 ) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        logger.info(f"Создан платёж ЮKassa: {data.get('id')}")
+                    response_text = await response.text()
+                    logger.debug(f"Response status: {response.status}, body: {response_text}")
+                    
+                    if response.status in [200, 201]:
+                        data = json.loads(response_text)
+                        logger.info(f"Создана платёжная ссылка Точка: {payment_id}")
                         
                         # Сохраняем платёж в БД
                         await self._save_payment_to_db(
-                            yookassa_payment_id=data.get("id"),
+                            tochka_payment_id=payment_id,
                             amount=amount,
                             user_id=user_id,
                             rental_id=rental_id,
@@ -133,14 +127,26 @@ class YooKassaService:
                             metadata=metadata
                         )
                         
-                        return data
+                        # Возвращаем данные в формате, совместимом с хендлерами
+                        payment_url = data.get("Data", {}).get("paymentLink") or data.get("Data", {}).get("link")
+                        
+                        return {
+                            "id": payment_id,
+                            "status": "pending",
+                            "confirmation": {
+                                "confirmation_url": payment_url
+                            },
+                            "amount": {
+                                "value": str(amount),
+                                "currency": "RUB"
+                            }
+                        }
                     else:
-                        error_text = await response.text()
-                        logger.error(f"Ошибка создания платежа ЮKassa: {response.status} - {error_text}")
+                        logger.error(f"Ошибка создания платёжной ссылки Точка: {response.status} - {response_text}")
                         return None
                         
         except Exception as e:
-            logger.error(f"Ошибка при создании платежа: {e}")
+            logger.error(f"Ошибка при создании платёжной ссылки: {e}")
             return None
     
     async def get_payment_status(self, payment_id: str) -> Optional[Dict[str, Any]]:
@@ -148,63 +154,59 @@ class YooKassaService:
         Получить статус платежа по ID
         
         Args:
-            payment_id: ID платежа в ЮKassa
+            payment_id: ID платежа
             
         Returns:
             Данные платежа или None
         """
         try:
-            async with aiohttp.ClientSession() as session:
-                auth = self._get_auth()
-                headers = self._get_headers()
+            # Сначала проверяем статус в нашей БД
+            from sqlalchemy import select
+            
+            async with async_session_factory() as session:
+                result = await session.execute(
+                    select(Payment).where(Payment.external_payment_id == payment_id)
+                )
+                payment = result.scalar_one_or_none()
                 
-                async with session.get(
-                    f"{self.BASE_URL}/payments/{payment_id}",
-                    auth=auth,
-                    headers=headers
-                ) as response:
+                if payment:
+                    # Преобразуем статус к формату API
+                    status_map = {
+                        PaymentStatus.PENDING: "pending",
+                        PaymentStatus.PROCESSING: "processing",
+                        PaymentStatus.SUCCEEDED: "succeeded",
+                        PaymentStatus.CANCELLED: "canceled",
+                        PaymentStatus.FAILED: "failed"
+                    }
+                    return {
+                        "id": payment_id,
+                        "status": status_map.get(payment.status, "unknown"),
+                        "amount": {
+                            "value": str(payment.amount),
+                            "currency": payment.currency
+                        }
+                    }
+            
+            # Если в БД нет - делаем запрос к API Точки
+            async with aiohttp.ClientSession() as session:
+                headers = self._get_headers()
+                url = f"{self.BASE_URL}/{self.customer_code}/payments/{payment_id}"
+                
+                async with session.get(url, headers=headers) as response:
                     if response.status == 200:
-                        return await response.json()
+                        data = await response.json()
+                        return data
                     else:
                         logger.error(f"Ошибка получения статуса платежа: {response.status}")
                         return None
+                        
         except Exception as e:
             logger.error(f"Ошибка при получении статуса платежа: {e}")
             return None
     
-    async def cancel_payment(self, payment_id: str) -> bool:
-        """
-        Отменить платёж
-        
-        Args:
-            payment_id: ID платежа в ЮKassa
-            
-        Returns:
-            True если успешно отменён
-        """
-        try:
-            async with aiohttp.ClientSession() as session:
-                auth = self._get_auth()
-                headers = self._get_headers()
-                
-                async with session.post(
-                    f"{self.BASE_URL}/payments/{payment_id}/cancel",
-                    auth=auth,
-                    headers=headers
-                ) as response:
-                    if response.status == 200:
-                        logger.info(f"Платёж {payment_id} отменён")
-                        return True
-                    else:
-                        logger.error(f"Ошибка отмены платежа: {response.status}")
-                        return False
-        except Exception as e:
-            logger.error(f"Ошибка при отмене платежа: {e}")
-            return False
-    
     async def _save_payment_to_db(
         self,
-        yookassa_payment_id: str,
+        tochka_payment_id: str,
         amount: Decimal,
         user_id: int,
         rental_id: Optional[int],
@@ -216,7 +218,7 @@ class YooKassaService:
         try:
             async with async_session_factory() as session:
                 payment = Payment(
-                    yookassa_payment_id=yookassa_payment_id,
+                    external_payment_id=tochka_payment_id,
                     amount=amount,
                     user_id=user_id,
                     rental_id=rental_id,
@@ -235,7 +237,7 @@ class YooKassaService:
     
     async def process_webhook(self, data: Dict[str, Any]) -> bool:
         """
-        Обработать webhook от ЮKassa
+        Обработать webhook от Точка Банка
         
         Args:
             data: Данные webhook
@@ -244,35 +246,30 @@ class YooKassaService:
             True если успешно обработано
         """
         try:
-            event_type = data.get("event")
-            payment_data = data.get("object", {})
-            payment_id = payment_data.get("id")
+            payment_data = data.get("Data", {})
+            payment_id = payment_data.get("paymentId")
+            status = payment_data.get("status", "").lower()
             
-            logger.info(f"Получен webhook ЮKassa: {event_type} для платежа {payment_id}")
+            logger.info(f"Получен webhook Точка: статус {status} для платежа {payment_id}")
             
-            if event_type == "payment.succeeded":
-                await self._handle_payment_succeeded(payment_data)
-            elif event_type == "payment.canceled":
-                await self._handle_payment_canceled(payment_data)
-            elif event_type == "payment.waiting_for_capture":
-                # Для автозахвата не требуется действий
-                pass
+            if status in ["succeeded", "completed", "paid"]:
+                await self._handle_payment_succeeded(payment_id, payment_data)
+            elif status in ["canceled", "cancelled", "failed"]:
+                await self._handle_payment_canceled(payment_id, payment_data)
             
             return True
         except Exception as e:
             logger.error(f"Ошибка обработки webhook: {e}")
             return False
     
-    async def _handle_payment_succeeded(self, payment_data: Dict[str, Any]):
+    async def _handle_payment_succeeded(self, payment_id: str, payment_data: Dict[str, Any]):
         """Обработать успешный платёж"""
         from sqlalchemy import select
-        
-        payment_id = payment_data.get("id")
         
         async with async_session_factory() as session:
             # Находим платёж в БД
             result = await session.execute(
-                select(Payment).where(Payment.yookassa_payment_id == payment_id)
+                select(Payment).where(Payment.external_payment_id == payment_id)
             )
             payment = result.scalar_one_or_none()
             
@@ -301,15 +298,13 @@ class YooKassaService:
                 await session.commit()
                 logger.info(f"Платёж {payment_id} помечен как успешный")
     
-    async def _handle_payment_canceled(self, payment_data: Dict[str, Any]):
+    async def _handle_payment_canceled(self, payment_id: str, payment_data: Dict[str, Any]):
         """Обработать отменённый платёж"""
         from sqlalchemy import select
         
-        payment_id = payment_data.get("id")
-        
         async with async_session_factory() as session:
             result = await session.execute(
-                select(Payment).where(Payment.yookassa_payment_id == payment_id)
+                select(Payment).where(Payment.external_payment_id == payment_id)
             )
             payment = result.scalar_one_or_none()
             
@@ -323,12 +318,12 @@ class RentalExtensionService:
     """Сервис для продления аренды"""
     
     def __init__(self):
-        self.yookassa = YooKassaService()
+        self.tochka = TochkaService()
     
     @staticmethod
     def get_tariffs() -> Dict[str, Dict[str, Any]]:
         """Получить доступные тарифы"""
-        return YooKassaService.TARIFFS
+        return TochkaService.TARIFFS
     
     async def get_active_rental(self, user_id: int) -> Optional[Rental]:
         """Получить активную аренду пользователя по telegram_id"""
@@ -401,7 +396,7 @@ class RentalExtensionService:
         from sqlalchemy import select
         from database.models.user import User
         
-        tariff = YooKassaService.TARIFFS.get(tariff_key)
+        tariff = TochkaService.TARIFFS.get(tariff_key)
         if not tariff:
             logger.error(f"Неизвестный тариф: {tariff_key}")
             return None
@@ -433,7 +428,7 @@ class RentalExtensionService:
         # Создаём платёж
         description = f"Продление аренды велосипеда на {tariff['name']}"
         
-        payment_data = await self.yookassa.create_payment(
+        payment_data = await self.tochka.create_payment_link(
             amount=tariff["price"],
             description=description,
             user_id=user.id,
@@ -450,13 +445,12 @@ class RentalExtensionService:
     
     async def check_payment_status(self, payment_id: str) -> Optional[str]:
         """Проверить статус платежа"""
-        payment_data = await self.yookassa.get_payment_status(payment_id)
+        payment_data = await self.tochka.get_payment_status(payment_id)
         if payment_data:
             return payment_data.get("status")
         return None
 
 
 # Глобальные экземпляры сервисов
-yookassa_service = YooKassaService()
+tochka_service = TochkaService()
 rental_extension_service = RentalExtensionService()
-

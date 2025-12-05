@@ -30,7 +30,7 @@ class Payment(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     
     # Платежная информация
-    yookassa_payment_id = Column(String(255), unique=True, nullable=True, index=True)
+    external_payment_id = Column(String(255), unique=True, nullable=True, index=True)  # ID платежа в Точка Банк
     amount = Column(Numeric(10, 2), nullable=False)
     currency = Column(String(3), default="RUB", nullable=False)
     

@@ -100,3 +100,4 @@ config.env
 # Alembic
 alembic/versions/*.py
 !alembic/versions/__init__.py
+config/test.env

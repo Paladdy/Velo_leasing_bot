@@ -14,10 +14,10 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = Field(default="redis://localhost:6379/0", env="REDIS_URL")
     
-    # Payment System (ЮKassa)
-    yookassa_shop_id: str = Field(default="", env="YOOKASSA_SHOP_ID")
-    yookassa_secret_key: str = Field(default="", env="YOOKASSA_SECRET_KEY")
-    yookassa_oauth_token: str = Field(default="", env="YOOKASSA_OAUTH_TOKEN")  # OAuth токен
+    # Payment System (Точка Банк)
+    tochka_jwt_token: str = Field(default="", env="TOCHKA_JWT_TOKEN")  # JWT токен для API
+    tochka_customer_code: str = Field(default="", env="TOCHKA_CUSTOMER_CODE")  # Код клиента
+    tochka_merchant_id: str = Field(default="", env="TOCHKA_MERCHANT_ID")  # ID торговой точки (опционально)
     
     # File Storage
     upload_path: str = Field(default="./uploads", env="UPLOAD_PATH")
