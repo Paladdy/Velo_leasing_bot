@@ -16,10 +16,10 @@ from database.models.rental import Rental, RentalStatus
 
 
 class TochkaService:
-    """Сервис для работы с API Точка Банка"""
+    """Сервис для работы с API Точка Банка (интернет-эквайринг)"""
     
-    # API URL для Open Banking
-    BASE_URL = "https://enter.tochka.com/uapi/open-banking/v1.0"
+    # API URL для эквайринга Точка Банка
+    BASE_URL = "https://enter.tochka.com/uapi/acquiring/v1.0"
     
     # Тарифы аренды
     TARIFFS = {
@@ -50,6 +50,31 @@ class TochkaService:
             "X-Request-Id": str(uuid.uuid4())
         }
     
+    async def get_retailers(self) -> Optional[Dict[str, Any]]:
+        """
+        Получить список торговых точек (retailers) для эквайринга.
+        Используется для получения merchantId если он не указан.
+        """
+        try:
+            async with aiohttp.ClientSession() as session:
+                headers = self._get_headers()
+                url = f"{self.BASE_URL}/{self.customer_code}/retailers"
+                
+                logger.info(f"Запрос списка торговых точек: {url}")
+                
+                async with session.get(url, headers=headers) as response:
+                    response_text = await response.text()
+                    logger.debug(f"Retailers response: {response.status}, {response_text}")
+                    
+                    if response.status == 200:
+                        return json.loads(response_text)
+                    else:
+                        logger.error(f"Ошибка получения retailers: {response.status} - {response_text}")
+                        return None
+        except Exception as e:
+            logger.error(f"Ошибка при получении retailers: {e}")
+            return None
+    
     async def create_payment_link(
         self,
         amount: Decimal,
@@ -61,7 +86,7 @@ class TochkaService:
         metadata: Optional[Dict[str, Any]] = None
     ) -> Optional[Dict[str, Any]]:
         """
-        Создать платёжную ссылку через Точка Банк
+        Создать платёжную ссылку через Точка Банк (интернет-эквайринг)
         
         Args:
             amount: Сумма платежа
@@ -79,27 +104,35 @@ class TochkaService:
             # Генерируем уникальный ID платежа
             payment_id = str(uuid.uuid4())
             
-            # Формируем данные для создания платёжной ссылки
+            # Сумма в копейках (или рублях - нужно проверить по документации)
+            amount_value = int(amount)  # Точка ожидает целое число рублей
+            
+            # Формируем данные для создания платёжной операции
+            # Формат согласно документации Точка Банка
             payload = {
                 "Data": {
-                    "amount": str(amount),
-                    "currency": "RUB",
-                    "purpose": description,
-                    "redirectUrl": return_url,
-                    "customerCode": self.customer_code,
-                    "paymentId": payment_id
+                    "Operation": [
+                        {
+                            "amount": amount_value,
+                            "paymentMode": ["card", "sbp"],  # Карты и СБП
+                            "redirectUrl": return_url,
+                            "failRedirectUrl": return_url,
+                            "purpose": description,
+                            "ttl": 1440  # 24 часа действия ссылки
+                        }
+                    ]
                 }
             }
             
-            # Если есть merchant_id для эквайринга
+            # Если указан merchantId - добавляем его
             if self.merchant_id:
-                payload["Data"]["merchantId"] = self.merchant_id
+                payload["Data"]["Operation"][0]["merchantId"] = self.merchant_id
             
             async with aiohttp.ClientSession() as session:
                 headers = self._get_headers()
                 
-                # Endpoint для создания платёжной ссылки
-                url = f"{self.BASE_URL}/{self.customer_code}/payment-link"
+                # Endpoint для создания платёжной операции
+                url = f"{self.BASE_URL}/{self.customer_code}/payment-operation"
                 
                 logger.info(f"Создание платёжной ссылки Точка: {url}")
                 logger.debug(f"Payload: {json.dumps(payload, ensure_ascii=False)}")
@@ -114,11 +147,23 @@ class TochkaService:
                     
                     if response.status in [200, 201]:
                         data = json.loads(response_text)
-                        logger.info(f"Создана платёжная ссылка Точка: {payment_id}")
+                        logger.info(f"Создана платёжная операция Точка: {payment_id}")
+                        
+                        # Извлекаем ссылку на оплату из ответа
+                        operations = data.get("Data", {}).get("Operation", [])
+                        payment_url = None
+                        tochka_operation_id = None
+                        
+                        if operations:
+                            payment_url = operations[0].get("paymentLink") or operations[0].get("link")
+                            tochka_operation_id = operations[0].get("operationId") or operations[0].get("id")
+                        
+                        # Используем ID от Точки если есть, иначе наш
+                        final_payment_id = tochka_operation_id or payment_id
                         
                         # Сохраняем платёж в БД
                         await self._save_payment_to_db(
-                            tochka_payment_id=payment_id,
+                            tochka_payment_id=final_payment_id,
                             amount=amount,
                             user_id=user_id,
                             rental_id=rental_id,
@@ -128,10 +173,8 @@ class TochkaService:
                         )
                         
                         # Возвращаем данные в формате, совместимом с хендлерами
-                        payment_url = data.get("Data", {}).get("paymentLink") or data.get("Data", {}).get("link")
-                        
                         return {
-                            "id": payment_id,
+                            "id": final_payment_id,
                             "status": "pending",
                             "confirmation": {
                                 "confirmation_url": payment_url
@@ -187,17 +230,32 @@ class TochkaService:
                         }
                     }
             
-            # Если в БД нет - делаем запрос к API Точки
+            # Если в БД нет - пытаемся запросить у Точки
             async with aiohttp.ClientSession() as session:
                 headers = self._get_headers()
-                url = f"{self.BASE_URL}/{self.customer_code}/payments/{payment_id}"
+                url = f"{self.BASE_URL}/{self.customer_code}/operations/{payment_id}"
                 
                 async with session.get(url, headers=headers) as response:
                     if response.status == 200:
                         data = await response.json()
-                        return data
+                        # Преобразуем статус Точки в наш формат
+                        tochka_status = data.get("Data", {}).get("status", "").lower()
+                        status_map = {
+                            "completed": "succeeded",
+                            "paid": "succeeded",
+                            "success": "succeeded",
+                            "cancelled": "canceled",
+                            "canceled": "canceled",
+                            "failed": "failed",
+                            "pending": "pending",
+                            "processing": "processing"
+                        }
+                        return {
+                            "id": payment_id,
+                            "status": status_map.get(tochka_status, "pending")
+                        }
                     else:
-                        logger.error(f"Ошибка получения статуса платежа: {response.status}")
+                        logger.warning(f"Статус платежа не найден в Точке: {response.status}")
                         return None
                         
         except Exception as e:
@@ -246,16 +304,25 @@ class TochkaService:
             True если успешно обработано
         """
         try:
+            # Формат webhook от Точки может быть разным
+            # Проверяем событие acquiringInternetPayment
+            event_type = data.get("eventType") or data.get("event")
             payment_data = data.get("Data", {})
-            payment_id = payment_data.get("paymentId")
-            status = payment_data.get("status", "").lower()
             
-            logger.info(f"Получен webhook Точка: статус {status} для платежа {payment_id}")
+            # Получаем ID операции
+            operation_id = (
+                payment_data.get("operationId") or 
+                payment_data.get("paymentId") or
+                payment_data.get("id")
+            )
+            status = (payment_data.get("status") or "").lower()
             
-            if status in ["succeeded", "completed", "paid"]:
-                await self._handle_payment_succeeded(payment_id, payment_data)
-            elif status in ["canceled", "cancelled", "failed"]:
-                await self._handle_payment_canceled(payment_id, payment_data)
+            logger.info(f"Получен webhook Точка: {event_type}, статус {status} для операции {operation_id}")
+            
+            if status in ["succeeded", "completed", "paid", "success"]:
+                await self._handle_payment_succeeded(operation_id, payment_data)
+            elif status in ["canceled", "cancelled", "failed", "rejected"]:
+                await self._handle_payment_canceled(operation_id, payment_data)
             
             return True
         except Exception as e:
