@@ -16,10 +16,12 @@ from database.models.rental import Rental, RentalStatus
 
 
 class TochkaService:
-    """Сервис для работы с API Точка Банка (интернет-эквайринг)"""
+    """Сервис для работы с API Точка Банка (СБП + эквайринг)"""
     
     # API URL для эквайринга Точка Банка
-    BASE_URL = "https://enter.tochka.com/uapi/acquiring/v1.0"
+    ACQUIRING_URL = "https://enter.tochka.com/uapi/acquiring/v1.0"
+    # API URL для СБП (Система быстрых платежей)
+    SBP_URL = "https://enter.tochka.com/uapi/sbp/v1.0"
     
     # Тарифы аренды
     TARIFFS = {
@@ -58,7 +60,7 @@ class TochkaService:
         try:
             async with aiohttp.ClientSession() as session:
                 headers = self._get_headers()
-                url = f"{self.BASE_URL}/{self.customer_code}/retailers"
+                url = f"{self.ACQUIRING_URL}/{self.customer_code}/retailers"
                 
                 logger.info(f"Запрос списка торговых точек: {url}")
                 
@@ -75,6 +77,122 @@ class TochkaService:
             logger.error(f"Ошибка при получении retailers: {e}")
             return None
     
+    async def get_sbp_legal_entities(self) -> Optional[Dict[str, Any]]:
+        """
+        Получить список юр.лиц зарегистрированных в СБП.
+        """
+        try:
+            async with aiohttp.ClientSession() as session:
+                headers = self._get_headers()
+                url = f"{self.SBP_URL}/{self.customer_code}/legal-entity"
+                
+                logger.info(f"Запрос юр.лиц СБП: {url}")
+                
+                async with session.get(url, headers=headers) as response:
+                    response_text = await response.text()
+                    logger.debug(f"SBP legal entities response: {response.status}, {response_text}")
+                    
+                    if response.status == 200:
+                        return json.loads(response_text)
+                    else:
+                        logger.error(f"Ошибка получения юр.лиц СБП: {response.status} - {response_text}")
+                        return None
+        except Exception as e:
+            logger.error(f"Ошибка при получении юр.лиц СБП: {e}")
+            return None
+    
+    async def create_sbp_qr(
+        self,
+        amount: Decimal,
+        description: str,
+        user_id: int,
+        rental_id: Optional[int] = None,
+        payment_type: PaymentType = PaymentType.RENTAL,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Создать динамический QR-код для оплаты через СБП
+        
+        Args:
+            amount: Сумма платежа
+            description: Описание платежа
+            user_id: ID пользователя
+            rental_id: ID аренды
+            payment_type: Тип платежа
+            metadata: Дополнительные данные
+            
+        Returns:
+            Данные с QR-кодом или None
+        """
+        try:
+            payment_id = str(uuid.uuid4())
+            
+            # Сумма в копейках для СБП
+            amount_kopeks = int(amount * 100)
+            
+            # Формат запроса для создания динамического QR-кода СБП
+            payload = {
+                "Data": {
+                    "amount": amount_kopeks,
+                    "currency": "RUB",
+                    "paymentPurpose": description,
+                    "qrcType": "02",  # 02 = динамический QR
+                    "sourceAccount": self.customer_code  # Счёт для зачисления
+                }
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                headers = self._get_headers()
+                url = f"{self.SBP_URL}/{self.customer_code}/qr-codes"
+                
+                logger.info(f"Создание СБП QR-кода: {url}")
+                logger.debug(f"SBP Payload: {json.dumps(payload, ensure_ascii=False)}")
+                
+                async with session.post(url, json=payload, headers=headers) as response:
+                    response_text = await response.text()
+                    logger.debug(f"SBP Response: {response.status}, {response_text}")
+                    
+                    if response.status in [200, 201]:
+                        data = json.loads(response_text)
+                        
+                        # Извлекаем данные QR-кода
+                        qr_data = data.get("Data", {})
+                        qr_id = qr_data.get("qrcId") or qr_data.get("id") or payment_id
+                        qr_url = qr_data.get("payload") or qr_data.get("qrUrl") or qr_data.get("url")
+                        qr_image = qr_data.get("image") or qr_data.get("qrImage")
+                        
+                        # Сохраняем в БД
+                        await self._save_payment_to_db(
+                            tochka_payment_id=qr_id,
+                            amount=amount,
+                            user_id=user_id,
+                            rental_id=rental_id,
+                            payment_type=payment_type,
+                            description=description,
+                            metadata=metadata
+                        )
+                        
+                        return {
+                            "id": qr_id,
+                            "status": "pending",
+                            "confirmation": {
+                                "confirmation_url": qr_url,
+                                "qr_image": qr_image
+                            },
+                            "amount": {
+                                "value": str(amount),
+                                "currency": "RUB"
+                            },
+                            "type": "sbp"
+                        }
+                    else:
+                        logger.error(f"Ошибка создания СБП QR: {response.status} - {response_text}")
+                        return None
+                        
+        except Exception as e:
+            logger.error(f"Ошибка при создании СБП QR: {e}")
+            return None
+    
     async def create_payment_link(
         self,
         amount: Decimal,
@@ -86,7 +204,8 @@ class TochkaService:
         metadata: Optional[Dict[str, Any]] = None
     ) -> Optional[Dict[str, Any]]:
         """
-        Создать платёжную ссылку через Точка Банк (интернет-эквайринг)
+        Создать платёж через Точка Банк.
+        Сначала пробует СБП, если не получится - эквайринг.
         
         Args:
             amount: Сумма платежа
@@ -100,56 +219,81 @@ class TochkaService:
         Returns:
             Данные платежа или None при ошибке
         """
+        # Сначала пробуем СБП
+        logger.info("Пробуем создать платёж через СБП...")
+        sbp_result = await self.create_sbp_qr(
+            amount=amount,
+            description=description,
+            user_id=user_id,
+            rental_id=rental_id,
+            payment_type=payment_type,
+            metadata=metadata
+        )
+        
+        if sbp_result:
+            logger.info("СБП QR-код успешно создан")
+            return sbp_result
+        
+        # Если СБП не сработал - пробуем эквайринг
+        logger.info("СБП не доступен, пробуем эквайринг...")
+        return await self._create_acquiring_payment(
+            amount=amount,
+            description=description,
+            user_id=user_id,
+            rental_id=rental_id,
+            payment_type=payment_type,
+            return_url=return_url,
+            metadata=metadata
+        )
+    
+    async def _create_acquiring_payment(
+        self,
+        amount: Decimal,
+        description: str,
+        user_id: int,
+        rental_id: Optional[int] = None,
+        payment_type: PaymentType = PaymentType.RENTAL,
+        return_url: str = "https://t.me/VeloLeasingBot",
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Создать платёжную ссылку через интернет-эквайринг Точка Банк
+        """
         try:
-            # Генерируем уникальный ID платежа
             payment_id = str(uuid.uuid4())
+            amount_value = int(amount)
             
-            # Сумма в копейках (или рублях - нужно проверить по документации)
-            amount_value = int(amount)  # Точка ожидает целое число рублей
-            
-            # Формируем данные для создания платёжной операции
-            # Формат согласно документации Точка Банка
             payload = {
                 "Data": {
                     "Operation": [
                         {
                             "amount": amount_value,
-                            "paymentMode": ["card", "sbp"],  # Карты и СБП
+                            "paymentMode": ["card", "sbp"],
                             "redirectUrl": return_url,
                             "failRedirectUrl": return_url,
                             "purpose": description,
-                            "ttl": 1440  # 24 часа действия ссылки
+                            "ttl": 1440
                         }
                     ]
                 }
             }
             
-            # Если указан merchantId - добавляем его
             if self.merchant_id:
                 payload["Data"]["Operation"][0]["merchantId"] = self.merchant_id
             
             async with aiohttp.ClientSession() as session:
                 headers = self._get_headers()
+                url = f"{self.ACQUIRING_URL}/{self.customer_code}/payment-operation"
                 
-                # Endpoint для создания платёжной операции
-                url = f"{self.BASE_URL}/{self.customer_code}/payment-operation"
-                
-                logger.info(f"Создание платёжной ссылки Точка: {url}")
+                logger.info(f"Создание платёжной ссылки эквайринг: {url}")
                 logger.debug(f"Payload: {json.dumps(payload, ensure_ascii=False)}")
                 
-                async with session.post(
-                    url,
-                    json=payload,
-                    headers=headers
-                ) as response:
+                async with session.post(url, json=payload, headers=headers) as response:
                     response_text = await response.text()
-                    logger.debug(f"Response status: {response.status}, body: {response_text}")
+                    logger.debug(f"Response: {response.status}, {response_text}")
                     
                     if response.status in [200, 201]:
                         data = json.loads(response_text)
-                        logger.info(f"Создана платёжная операция Точка: {payment_id}")
-                        
-                        # Извлекаем ссылку на оплату из ответа
                         operations = data.get("Data", {}).get("Operation", [])
                         payment_url = None
                         tochka_operation_id = None
@@ -158,10 +302,8 @@ class TochkaService:
                             payment_url = operations[0].get("paymentLink") or operations[0].get("link")
                             tochka_operation_id = operations[0].get("operationId") or operations[0].get("id")
                         
-                        # Используем ID от Точки если есть, иначе наш
                         final_payment_id = tochka_operation_id or payment_id
                         
-                        # Сохраняем платёж в БД
                         await self._save_payment_to_db(
                             tochka_payment_id=final_payment_id,
                             amount=amount,
@@ -172,7 +314,6 @@ class TochkaService:
                             metadata=metadata
                         )
                         
-                        # Возвращаем данные в формате, совместимом с хендлерами
                         return {
                             "id": final_payment_id,
                             "status": "pending",
@@ -182,14 +323,15 @@ class TochkaService:
                             "amount": {
                                 "value": str(amount),
                                 "currency": "RUB"
-                            }
+                            },
+                            "type": "acquiring"
                         }
                     else:
-                        logger.error(f"Ошибка создания платёжной ссылки Точка: {response.status} - {response_text}")
+                        logger.error(f"Ошибка эквайринга: {response.status} - {response_text}")
                         return None
                         
         except Exception as e:
-            logger.error(f"Ошибка при создании платёжной ссылки: {e}")
+            logger.error(f"Ошибка при создании платежа эквайринг: {e}")
             return None
     
     async def get_payment_status(self, payment_id: str) -> Optional[Dict[str, Any]]:
@@ -233,7 +375,7 @@ class TochkaService:
             # Если в БД нет - пытаемся запросить у Точки
             async with aiohttp.ClientSession() as session:
                 headers = self._get_headers()
-                url = f"{self.BASE_URL}/{self.customer_code}/operations/{payment_id}"
+                url = f"{self.ACQUIRING_URL}/{self.customer_code}/operations/{payment_id}"
                 
                 async with session.get(url, headers=headers) as response:
                     if response.status == 200:
