@@ -46,8 +46,14 @@ def get_extension_confirm_keyboard(tariff_key: str, rental_id: int, lang: str = 
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(
-                text="✅ Оплатить",
-                callback_data=f"confirm_extend_{tariff_key}_{rental_id}"
+                text="📱 Оплатить по QR",
+                url="https://t.me/Leo126Leo"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🔗 Ссылка на оплату",
+                url="https://t.me/Leo126Leo"
             )
         ],
         [
